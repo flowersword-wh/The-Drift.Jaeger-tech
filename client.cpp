@@ -6,10 +6,10 @@
 #include <cstdint>
 #include <cstring>
 #include <fstream>
-#include <iostream>
 #include <stdexcept>
 #include <string>
 #include <sys/stat.h>
+#include "include/logger.h"
 
 
 #define BUF_SIZE 256
@@ -36,20 +36,26 @@ bool sendAll(SOCKET fd, const void *data, int len) {
   return true;
 }
 int main() {
+  Logger logger;
+  logger.info("Client starting...");
   SetConsoleOutputCP(CP_UTF8);
+  logger.info("Console output code page set to UTF-8.");
   WSADATA wsaData;
 
+  logger.info("Initializing Winsock...");
   int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
 
   if (result != 0) {
     throw std::runtime_error("WSAStartup failed");
   }
+  logger.info("Winsock initialized.");
   // 1. 创建监听套接字 (AF_INET=IPv4, SOCK_STREAM=TCP)
   SOCKET client_fd = socket(AF_INET, SOCK_STREAM, 0);
   if (client_fd == INVALID_SOCKET) {
     throw std::runtime_error("socket failed: " +
                              std::to_string(WSAGetLastError()));
   }
+  logger.info("Client socket created.");
   // 3. 准备地址结构体，绑定端口 8080]
   sockaddr_in sockaddr_in_t {};
   sockaddr_in_t.sin_family = AF_INET;
@@ -58,8 +64,9 @@ int main() {
 
   // 5. 请求连接
   int len = sizeof(sockaddr_in_t);
+  logger.info("Connecting to server...");
   judge(connect(client_fd, (sockaddr *)&sockaddr_in_t, len), "connect");
-  std::cout << "连接已建立..." << std::endl;
+  logger.info("Connection established.");
 
   // 6. 读取要传输的文件
   const char *filename = "demo.txt";
@@ -70,27 +77,33 @@ int main() {
   // stat(filename,&buf)
   struct stat statbuf;
   if (stat("demo.txt", &statbuf) != 0) {
-    std::cout << "文件获取失败" << std::endl;
+    logger.error("Failed to get file.");
     return 1;
   }
 
   std::uint32_t filenamelength = static_cast<std::uint32_t>((strlen(filename)));
   std::uint64_t filesize = static_cast<std::uint64_t>(statbuf.st_size);
+  logger.info("File: " + std::string(filename));
+  logger.info("File size: " + std::to_string(filesize) + " B");
 
   // 发送文件名长度
+  logger.info("Sending filename length...");
   if (!sendAll(client_fd, &filenamelength, sizeof(filenamelength))) {
     throw std::runtime_error("filenamelength send failed");
   }
   // 发送文件大小 // filesize 得到的是文件大小
   // sizeof(filesize)表示这个文件大小数值 占用多少字节
+  logger.info("Sending file size...");
   if (!sendAll(client_fd, &filesize, sizeof(filesize))) {
     throw std::runtime_error("filesize send failed");
   }
   // 发送文件名
+  logger.info("Sending filename...");
   if (!sendAll(client_fd, filename, filenamelength)) {
     throw std::runtime_error("filename send failed");
   }
   // 发送文件内容
+  logger.info("Sending file content...");
   std::ifstream file("demo.txt", std::ios::binary);
   if (!file) {
     throw std::runtime_error("file open failed");
@@ -104,10 +117,11 @@ int main() {
     }
   }
   file.close();
+  logger.info("File sent: " + std::to_string(filesize) + " B");
 
   shutdown(client_fd, SD_BOTH);
   closesocket(client_fd);
   WSACleanup();
-  std::cout << "连接已释放..." << std::endl;
+  logger.info("Connection closed.");
   return 0;
 }
