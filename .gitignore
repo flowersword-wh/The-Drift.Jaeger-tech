@@ -1,0 +1,35 @@
+# CMake 构建目录
+build/
+cmake-build-*/
+
+# 编译生成文件
+*.o
+*.obj
+*.exe
+*.dll
+*.lib
+*.a
+*.out
+
+# Visual Studio
+.vs/
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.user
+
+# 调试和临时文件
+*.log
+*.tmp
+*.swp
+*.dSYM/
+
+# VS Code 私人配置
+# 如果希望保留项目配置，不要忽略 .vscode/
+.vscode/launch.json
+.vscode/tasks.json
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
+desktop.ini
