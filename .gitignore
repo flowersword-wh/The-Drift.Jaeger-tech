@@ -34,5 +34,7 @@ cmake-build-*/
 Thumbs.db
 desktop.ini
 
-build/
 .vscode/
+build/
+*.exe
+*.obj
