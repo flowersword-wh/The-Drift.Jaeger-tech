@@ -5,20 +5,25 @@
 #include <windows.h>
 #include <cstdint>
 #include <fstream>
-#include <iostream>
 #include <stdexcept>
 #include <string>
 #include <algorithm>
 #include <sys/stat.h>
+#include "include/logger.h"
 
 #define BUF_SIZE 256
 #pragma comment(lib, "ws2_32.lib")
 
 int judge(int result, const std::string& message) {
-  if (result == SOCKET_ERROR) {
-    throw std::runtime_error(message + " failed");
-  }
-  return 0;
+    if (result == SOCKET_ERROR) {
+        int error = WSAGetLastError();
+
+        throw std::runtime_error(
+            message + " failed, WSA error: " + std::to_string(error)
+        );
+    }
+
+    return 0;
 }
 
 bool recvAll(SOCKET fd, char *data, int len) {
@@ -33,14 +38,18 @@ bool recvAll(SOCKET fd, char *data, int len) {
   return true;
 }
 int main() {
+  Logger logger;
+  logger.info("Server starting...");
+  logger.info("Setting console output code page to UTF-8...");
   SetConsoleOutputCP(CP_UTF8);
+  logger.info("Console output code page set to UTF-8.");
+  logger.info("Initializing Winsock...");
   WSADATA wsaData;
-
   int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
-
   if (result != 0) {
     throw std::runtime_error("WSAStartup failed");
   }
+  logger.info("Winsock initialized.");
   // 1. 创建监听套接字 (AF_INET=IPv4, SOCK_STREAM=TCP)
   SOCKET server_fd = socket(AF_INET, SOCK_STREAM, 0);
   if (server_fd == INVALID_SOCKET) {
@@ -65,7 +74,7 @@ int main() {
 
   // 5. 开始监听 (第二个参数是未完成连接队列的大小，通常设为 SOMAXCONN,表示让系统使用一个合理的最大等待队列长度)
   judge(listen(server_fd, SOMAXCONN), "listen");
-  std::cout << "监听中..." << std::endl;
+  logger.info("Listening...");
 
   // 6. 接受客户端连接 (阻塞在这里)
   int len = sizeof(sockaddr_in_t);
@@ -73,7 +82,7 @@ int main() {
   if (client_fd == INVALID_SOCKET) {
     throw std::runtime_error("accept failed: ");
   }
-  std::cout << "连接已建立..." << std::endl;
+  logger.info("Connection established.");
   // 7. 建立连接后，接收客户端发送的消息
   std::uint32_t filenamelength;
   std::uint64_t filesize;
@@ -87,11 +96,13 @@ int main() {
   if (filenamelength == 0 || filenamelength > 260) {
     throw std::runtime_error("invalid filename length");
   }
+  logger.info("Received filename length: " + std::to_string(filenamelength));
   // 接收文件大小
   if (!recvAll(client_fd, reinterpret_cast<char *>(&filesize),
                sizeof(filesize))) {
     throw std::runtime_error("filesize receive failed");
   };
+  logger.info("Received file size: " + std::to_string(filesize));
   // 接收文件名
   // 创建一个长度为 filenamelength 的字符串，并用 '\0' 填充
   // 先分配出足够的空间，让 recv() 把文件名写进去
@@ -100,6 +111,7 @@ int main() {
   if (!recvAll(client_fd, filename.data(), static_cast<int>(filenamelength))) {
     throw std::runtime_error("filename receive failed");
   };
+  logger.info("Received filename: " + filename);
   // 接收文件内容
   std::ofstream file(filename, std::ios::binary);
   if (!file) {
@@ -115,14 +127,18 @@ int main() {
     file.write(buffer, min);
     remain -= min;
   }
-
-
+  logger.info("Expected bytes to write: " + std::to_string(filesize) + " B");
+  logger.info("Bytes written: " + std::to_string(filesize - remain) + " B");
+  if (remain != 0) {
+    logger.error("Failed to receive complete file");
+    logger.error("Remaining bytes: " + std::to_string(remain) + " B");
+  }
 
   shutdown(server_fd, SD_BOTH);
   closesocket(server_fd);
   shutdown(client_fd, SD_BOTH);
   closesocket(client_fd);
   WSACleanup();
-  std::cout << "连接已释放..." << std::endl;
+  logger.info("Connection closed.");
   return 0;
 }
