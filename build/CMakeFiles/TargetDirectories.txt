@@ -1,0 +1,4 @@
+E:/Projects/selfprojects/The Drift . Jaeger tech/build/CMakeFiles/server.dir
+E:/Projects/selfprojects/The Drift . Jaeger tech/build/CMakeFiles/client.dir
+E:/Projects/selfprojects/The Drift . Jaeger tech/build/CMakeFiles/edit_cache.dir
+E:/Projects/selfprojects/The Drift . Jaeger tech/build/CMakeFiles/rebuild_cache.dir
