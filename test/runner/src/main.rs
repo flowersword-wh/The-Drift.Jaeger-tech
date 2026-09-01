@@ -75,7 +75,10 @@ fn main() -> ExitCode {
     let (server_stdout, server_stderr) = match log_streams(&server_log) {
         Ok(streams) => streams,
         Err(error) => {
-            eprintln!("Unable to create server-side log. {}：{error}", server_log.display());
+            eprintln!(
+                "Unable to create server-side log. {}：{error}",
+                server_log.display()
+            );
             return ExitCode::FAILURE;
         }
     };
@@ -83,7 +86,10 @@ fn main() -> ExitCode {
     let (client_stdout, client_stderr) = match log_streams(&client_log) {
         Ok(streams) => streams,
         Err(error) => {
-            eprintln!("Unable to create client log. {}：{error}", client_log.display());
+            eprintln!(
+                "Unable to create client log. {}：{error}",
+                client_log.display()
+            );
             return ExitCode::FAILURE;
         }
     };
@@ -132,7 +138,7 @@ fn main() -> ExitCode {
         }
     };
 
-		println!("Accessing...");
+    println!("Accessing...");
     let client_status = wait_with_timeout(&mut client, PROCESS_TIMEOUT);
     if !matches!(&client_status, Ok(status) if status.success()) {
         let _ = server.kill();
@@ -148,11 +154,12 @@ fn main() -> ExitCode {
     println!("Client status：{client_status:?}");
     println!("Server status：{server_status:?}");
 
-		output_log(&server_log)
-      .map(|log| println!("Server log：\n{log}")).unwrap();
+    output_log(&server_log)
+        .map(|log| println!("Server log：\n{log}"))
+        .unwrap();
     output_log(&client_log)
-      .map(|log| println!("Client log：\n{log}")).unwrap();
-
+        .map(|log| println!("Client log：\n{log}"))
+        .unwrap();
 
     if matches!(client_status, Ok(status) if status.success())
         && matches!(server_status, Ok(status) if status.success())
