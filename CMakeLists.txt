@@ -12,6 +12,10 @@ add_executable(server server.cpp
     include/logger.h)
 add_executable(client client.cpp
     include/logger.h)
+add_executable(fileoverview
+    fileoverview.cpp
+    fileoverview.h
+)
 
 if(WIN32)
     target_link_libraries(server PRIVATE ws2_32)

@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <sys/stat.h>
 #include "include/logger.h"
+#include "fileoverview.h"
 
 #define BUF_SIZE 256
 #pragma comment(lib, "ws2_32.lib")
