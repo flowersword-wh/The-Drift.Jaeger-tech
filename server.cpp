@@ -214,7 +214,6 @@ int main(int argc, char *argv[])
 
 		char buffer[256];
 		std::uint64_t remain = filesize;
-
 		while (remain > 0) {
 			int min =
 					static_cast<int>(std::min<std::uint64_t>(remain, sizeof(buffer)));
