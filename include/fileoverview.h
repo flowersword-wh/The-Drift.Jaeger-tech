@@ -11,5 +11,4 @@
 #endif
 
 namespace fs = std::filesystem;
-int getFileOverview(const std::string& path);
-
+int getFileOverview(const std::string &path);
