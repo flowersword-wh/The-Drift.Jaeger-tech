@@ -41,3 +41,7 @@ build/
 .obsidian/
 fileoverview.txt
 .xmake/
+target/
+test/client_test/
+test/server_test/
+compile_commands.json
