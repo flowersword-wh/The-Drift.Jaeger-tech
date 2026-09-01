@@ -173,9 +173,7 @@ int main(int argc, char *argv[])
 		size_t size;
 		std::string name;
 	};
-	std::vector<file> filelost{
-
-	};
+	std::vector<file> filelost{};
 	logger.info("Starting file synchronization...");
 
 	for (const auto &entry : fs::directory_iterator(folderPath)) {
@@ -186,11 +184,14 @@ int main(int argc, char *argv[])
 			fileCount++;
 		}
 	}
+
 	// 发送缺失文件数给server
 	if (!sendAll(client_fd, &fileCount, sizeof(fileCount))) {
 		throw std::runtime_error("fileCount send failed");
 	}
+
 	int count = 0;
+
 	for (const auto &entry : filelost) {
 		if (count >= fileCount)
 			break;
