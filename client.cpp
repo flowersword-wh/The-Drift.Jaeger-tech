@@ -4,12 +4,13 @@
 #include <ws2tcpip.h>
 #include <windows.h>
 #include <cstdint>
-#include <cstring>
 #include <fstream>
 #include <stdexcept>
 #include <string>
+#include <algorithm>
 #include <sys/stat.h>
 #include "include/logger.h"
+#include "fileoverview.h"
 
 
 #define BUF_SIZE 256
@@ -32,6 +33,18 @@ bool sendAll(SOCKET fd, const void *data, int len) {
       return false;
     }
     sent += result;
+  }
+  return true;
+}
+
+bool recvAll(SOCKET fd, char *data, int len) {
+  int received = 0;
+  while (received < len) {
+    int result = recv(fd, data + received, len - received, 0);
+    if (result <= 0) {
+      return false;
+    }
+    received += result;
   }
   return true;
 }
@@ -62,12 +75,17 @@ int main() {
   sockaddr_in_t.sin_port = htons(8080);
   sockaddr_in_t.sin_addr.s_addr = inet_addr("10.22.55.186");
 
-  // 5. 请求连接
+  // 4. 请求连接
   int len = sizeof(sockaddr_in_t);
   logger.info("Connecting to server...");
   judge(connect(client_fd, (sockaddr *)&sockaddr_in_t, len), "connect");
   logger.info("Connection established.");
 
+  // 5. 请求要同步的文件夹内容
+  //std::string ask_msg = "请发送要同步的文件夹现有内容";
+  //sendAll(client_fd, ask_msg.data() ,(int)(ask_msg.size()));
+
+  // 6. 读取服务端发来的文件夹内容
   // 6. 读取要传输的文件
   const char *filename = "demo.txt";
   char buffer[BUF_SIZE] = {0};

@@ -1,30 +1,29 @@
 #define WIN32_LEAN_AND_MEAN
 
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#include <windows.h>
+#include "fileoverview.h"
+#include "include/logger.h"
+#include <algorithm>
 #include <cstdint>
 #include <fstream>
 #include <stdexcept>
 #include <string>
-#include <algorithm>
 #include <sys/stat.h>
-#include "include/logger.h"
-#include "fileoverview.h"
+#include <windows.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
 
 #define BUF_SIZE 256
 #pragma comment(lib, "ws2_32.lib")
 
-int judge(int result, const std::string& message) {
-    if (result == SOCKET_ERROR) {
-        int error = WSAGetLastError();
+int judge(int result, const std::string &message) {
+  if (result == SOCKET_ERROR) {
+    int error = WSAGetLastError();
 
-        throw std::runtime_error(
-            message + " failed, WSA error: " + std::to_string(error)
-        );
-    }
+    throw std::runtime_error(message +
+                             " failed, WSA error: " + std::to_string(error));
+  }
 
-    return 0;
+  return 0;
 }
 
 bool recvAll(SOCKET fd, char *data, int len) {
@@ -65,15 +64,17 @@ int main() {
         "setsockopt");
 
   // 3. 准备地址结构体，绑定端口 8080]
-  sockaddr_in sockaddr_in_t {};
+  sockaddr_in sockaddr_in_t{};
   sockaddr_in_t.sin_family = AF_INET;
   sockaddr_in_t.sin_port = htons(8080);
   sockaddr_in_t.sin_addr.s_addr = inet_addr("10.22.55.186");
 
   // 4. 绑定端口
-  judge(bind(server_fd, (sockaddr *)&sockaddr_in_t, sizeof(sockaddr_in_t)), "bind");
+  judge(bind(server_fd, (sockaddr *)&sockaddr_in_t, sizeof(sockaddr_in_t)),
+        "bind");
 
-  // 5. 开始监听 (第二个参数是未完成连接队列的大小，通常设为 SOMAXCONN,表示让系统使用一个合理的最大等待队列长度)
+  // 5. 开始监听 (第二个参数是未完成连接队列的大小，通常设为
+  // SOMAXCONN,表示让系统使用一个合理的最大等待队列长度)
   judge(listen(server_fd, SOMAXCONN), "listen");
   logger.info("Listening...");
 
@@ -84,7 +85,21 @@ int main() {
     throw std::runtime_error("accept failed: ");
   }
   logger.info("Connection established.");
-  // 7. 建立连接后，接收客户端发送的消息
+  // 7. 建立连接后,发送要同步的文件夹
+  std::string path;
+  std::cout << "请输入要获取的文件夹路径：" << std::endl;
+  std::getline(std::cin, path);
+  getFileOverview(path); // 得到文件夹内容
+
+  std::ifstream fileview("fileoverview.txt", std::ios::out);
+  if (!fileview) {
+    throw std::runtime_error("file open failed");
+  }
+  std::string line;
+  while (std::getline(fileview, line)) {
+    // 将line 发送给客户端
+    send(client_fd, line.data(),(int)(line.size()), 0);
+  }
   std::uint32_t filenamelength;
   std::uint64_t filesize;
 
@@ -93,7 +108,7 @@ int main() {
                sizeof(filenamelength))) {
     throw std::runtime_error("filenamelength receive failed");
   };
-  //检查文件名长度是否合规
+  // 检查文件名长度是否合规
   if (filenamelength == 0 || filenamelength > 260) {
     throw std::runtime_error("invalid filename length");
   }
@@ -114,10 +129,11 @@ int main() {
   };
   logger.info("Received filename: " + filename);
   // 接收文件内容
-  std::ofstream file(filename, std::ios::binary);
+  std::fstream file(filename, std::ios::binary);
   if (!file) {
     throw std::runtime_error("file open failed");
   }
+
   char buffer[256];
   std::uint64_t remain = filesize;
   while (remain > 0) {
