@@ -123,7 +123,7 @@ int main()
 	sockaddr_in sockaddr_in_t{};
 	sockaddr_in_t.sin_family = AF_INET;
 	sockaddr_in_t.sin_port = htons(8080);
-	sockaddr_in_t.sin_addr.s_addr = inet_addr("10.22.55.186");
+	sockaddr_in_t.sin_addr.s_addr = htonl(INADDR_ANY);
 
 	// 4. 绑定端口
 	judge(bind(server_fd, (sockaddr *) &sockaddr_in_t, sizeof(sockaddr_in_t)),

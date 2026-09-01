@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+
+set -eu
+
+command -v clang-format >/dev/null 2>&1 || {
+  echo "pre-commit: clang-format is required" >&2
+  exit 1
+}
+
+command -v rustfmt >/dev/null 2>&1 || {
+  echo "pre-commit: rustfmt is required" >&2
+  exit 1
+}
+
+git diff --cached --name-only --diff-filter=ACMR |
+  while IFS= read -r file; do
+    case "$file" in
+      *.h|*.hpp|*.cpp)
+        clang-format -i --style=file -- "$file"
+        git add -- "$file"
+        ;;
+      *.rs)
+        rustfmt --edition 2024 --emit files -- "$file"
+        git add -- "$file"
+        ;;
+    esac
+  done
+
+exit 0

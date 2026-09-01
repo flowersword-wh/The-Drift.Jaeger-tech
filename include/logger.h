@@ -13,39 +13,47 @@
 #define LOG_COLOR_RESET "\033[0m"
 #define LOG_TS_COLOR "\033[90m"
 
-class Logger {
+class Logger
+{
 public:
-  Logger() : startTime_(std::chrono::steady_clock::now()) {}
+	Logger() : startTime_(std::chrono::steady_clock::now())
+	{
+	}
 
-  void info(std::string_view message) {
-    write(LOG_COLOR_GREEN, "INFO", message);
-  }
+	void info(std::string_view message)
+	{
+		write(LOG_COLOR_GREEN, "INFO", message);
+	}
 
-  void warning(std::string_view message) {
-    write(LOG_COLOR_YELLOW, "WARNING", message);
-  }
+	void warning(std::string_view message)
+	{
+		write(LOG_COLOR_YELLOW, "WARNING", message);
+	}
 
-  void debug(std::string_view message) {
-    write(LOG_COLOR_BLUE, "DEBUG", message);
-  }
+	void debug(std::string_view message)
+	{
+		write(LOG_COLOR_BLUE, "DEBUG", message);
+	}
 
-  void error(std::string_view message) {
-    write(LOG_COLOR_RED, "ERROR", message);
-  }
+	void error(std::string_view message)
+	{
+		write(LOG_COLOR_RED, "ERROR", message);
+	}
 
 private:
-  std::chrono::steady_clock::time_point startTime_;
-  double get_timer() const {
-    const auto now = std::chrono::steady_clock::now();
-    const auto duration = now - startTime_;
-    return std::chrono::duration<double, std::milli>(duration).count();
-  }
+	std::chrono::steady_clock::time_point startTime_;
+	double get_timer() const
+	{
+		const auto now = std::chrono::steady_clock::now();
+		const auto duration = now - startTime_;
+		return std::chrono::duration<double, std::milli>(duration).count();
+	}
 
-  void write(const char *color, const char *level,
-             std::string_view message) const {
-    std::cout << std::fixed << std::setprecision(3)
-              << LOG_TS_COLOR << "[ " << get_timer() << " ms] "
-              << LOG_COLOR_RESET << color << "[" << level << "] "
-              << LOG_COLOR_RESET << message << std::endl;
-  }
+	void write(const char *color, const char *level,
+						 std::string_view message) const
+	{
+		std::cout << std::fixed << std::setprecision(3) << LOG_TS_COLOR << "[ "
+							<< get_timer() << " ms] " << LOG_COLOR_RESET << color << "["
+							<< level << "] " << LOG_COLOR_RESET << message << std::endl;
+	}
 };

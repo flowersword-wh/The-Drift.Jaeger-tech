@@ -18,6 +18,26 @@ local function copy_exe(target, subdir, path_api, os_api)
   os_api.cp(target:targetfile(), deploy_dir)
 end
 
+local function cargo_build_runner(path_api, os_api)
+  local manifest = path_api.join(os_api.projectdir(), "test", "runner", "Cargo.toml")
+  local args = {"build", "--manifest-path", manifest}
+
+  if is_mode("release") then
+    table.insert(args, "--release")
+  end
+
+  os_api.vrunv("cargo", args)
+end
+
+local function run_rust_runner(path_api, os_api)
+  local profile = is_mode("release") and "release" or "debug"
+  local executable = path_api.join(
+    os_api.projectdir(), "test", "runner", "target", profile, "runner.exe"
+  )
+
+  os_api.execv(executable, {})
+end
+
 target("server")
   set_kind("binary")
   add_files("server.cpp", "fileoverview.cpp")
@@ -37,3 +57,15 @@ target("client")
 target("fileoverview")
   set_kind("binary")
   add_files("fileoverview_main.cpp", "fileoverview.cpp")
+
+target("test_runner")
+  set_kind("phony")
+  add_deps("server", "client")
+
+  on_build(function(target)
+      cargo_build_runner(path, os)
+  end)
+
+  on_run(function(target)
+      run_rust_runner(path, os)
+  end)
