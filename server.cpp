@@ -54,7 +54,7 @@ bool recvAll(SOCKET fd, char *data, int len)
 	}
 	return true;
 }
-int main()
+int main(int argc, char *argv[])
 {
 	// 启动程序 初始化Winsock
 	Logger logger;
@@ -91,11 +91,12 @@ int main()
 		return -1;
 	}
 	// 扫描目录，生成文件夹概览
-	if(getFileOverview(folderpath) != 0){
-    logger.error("get overviewfile failed");
-  };
+	if (getFileOverview(folderpath) != 0) {
+		logger.error("get overviewfile failed");
+		return -1;
+	};
 	// 得到概览文件大小
-	std::uint32_t overviewSize;
+	std::uint64_t overviewSize;
 	FILE *fp;
 	fp = fopen("fileoverview.txt", "rb");
 	if (!fp) {
@@ -149,7 +150,7 @@ int main()
 		throw std::runtime_error("overviewSize send failed");
 	}
 	// 发送概览文件内容
-  char buffer[256];
+	char buffer[256];
 	std::ifstream fileview("fileoverview.txt", std::ios::binary);
 	if (!fileview) {
 		throw std::runtime_error("file open failed");
@@ -204,15 +205,16 @@ int main()
 
 		logger.info("Received filename: " + filename);
 		// 接收文件内容
-    fs::path savepath = fs::path(folderpath) / filename;
-    logger.info("Saving file to: " + savepath.string());
-		std::fstream file(savepath, std::ios::binary | std::ios::trunc);
+		fs::path savepath = fs::path(folderpath) / filename;
+		logger.info("Saving file to: " + savepath.string());
+		std::ofstream file(savepath, std::ios::binary | std::ios::trunc);
 		if (!file) {
 			throw std::runtime_error("file open failed");
 		}
 
 		char buffer[256];
 		std::uint64_t remain = filesize;
+
 		while (remain > 0) {
 			int min =
 					static_cast<int>(std::min<std::uint64_t>(remain, sizeof(buffer)));
@@ -222,12 +224,9 @@ int main()
 			file.write(buffer, min);
 			remain -= min;
 		}
+
 		logger.info("Expected bytes to write: " + std::to_string(filesize) + " B");
 		logger.info("Bytes written: " + std::to_string(filesize - remain) + " B");
-		if (remain != 0) {
-			logger.error("Failed to receive complete file");
-			logger.error("Remaining bytes: " + std::to_string(remain) + " B");
-		}
 	}
 	logger.info("All files received.");
 	// 关闭连接
