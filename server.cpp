@@ -26,6 +26,18 @@ int judge(int result, const std::string &message)
 
 	return 0;
 }
+bool sendAll(SOCKET fd, const void *data, int len) {
+  int sent = 0;
+  const char *bytes = static_cast<const char *>(data);
+  while (sent < len) {
+    int result = send(fd, bytes + sent, len - sent, 0);
+    if (result <= 0) {
+      return false;
+    }
+    sent += result;
+  }
+  return true;
+}
 
 bool recvAll(SOCKET fd, char *data, int len)
 {
@@ -81,78 +93,78 @@ int main()
 	judge(listen(server_fd, SOMAXCONN), "listen");
 	logger.info("Listening...");
 
-	// 6. 接受客户端连接 (阻塞在这里)
-	int len = sizeof(sockaddr_in_t);
-	SOCKET client_fd = accept(server_fd, (sockaddr *) &sockaddr_in_t, &len);
-	if (client_fd == INVALID_SOCKET) {
-		throw std::runtime_error("accept failed: ");
-	}
-	logger.info("Connection established.");
-	// 7. 建立连接后,发送要同步的文件夹
-	std::string path;
-	std::cout << "请输入要获取的文件夹路径：" << std::endl;
-	std::getline(std::cin, path);
-	getFileOverview(path); // 得到文件夹内容
+  // 6. 接受客户端连接 (阻塞在这里)
+  int len = sizeof(sockaddr_in_t);
+  SOCKET client_fd = accept(server_fd, (sockaddr *)&sockaddr_in_t, &len);
+  if (client_fd == INVALID_SOCKET) {
+    throw std::runtime_error("accept failed: ");
+  }
+  logger.info("Connection established.");
+  // 7. 建立连接后,发送要同步的文件夹
+  std::string path;
+  std::cout << "请输入要获取的文件夹路径：" << std::endl;
+  std::getline(std::cin, path);
+  getFileOverview(path); // 得到文件夹内容
 
-	std::ifstream fileview("fileoverview.txt", std::ios::out);
-	if (!fileview) {
-		throw std::runtime_error("file open failed");
-	}
-	std::string line;
-	while (std::getline(fileview, line)) {
-		// 将line 发送给客户端
-		send(client_fd, line.data(), (int) (line.size()), 0);
-	}
-	std::uint32_t filenamelength;
-	std::uint64_t filesize;
+  std::ifstream fileview("fileoverview.txt", std::ios::out);
+  if (!fileview) {
+    throw std::runtime_error("file open failed");
+  }
+  std::string line;
+  while (std::getline(fileview, line)) {
+    // 将line 发送给客户端
+    send(client_fd, line.data(),(int)(line.size()), 0);
+  }
+  std::uint32_t filenamelength;
+  std::uint64_t filesize;
 
-	// 接收文件名长度
-	if (!recvAll(client_fd, reinterpret_cast<char *>(&filenamelength),
-							 sizeof(filenamelength))) {
-		throw std::runtime_error("filenamelength receive failed");
-	};
-	// 检查文件名长度是否合规
-	if (filenamelength == 0 || filenamelength > 260) {
-		throw std::runtime_error("invalid filename length");
-	}
-	logger.info("Received filename length: " + std::to_string(filenamelength));
-	// 接收文件大小
-	if (!recvAll(client_fd, reinterpret_cast<char *>(&filesize),
-							 sizeof(filesize))) {
-		throw std::runtime_error("filesize receive failed");
-	};
-	logger.info("Received file size: " + std::to_string(filesize));
-	// 接收文件名
-	// 创建一个长度为 filenamelength 的字符串，并用 '\0' 填充
-	// 先分配出足够的空间，让 recv() 把文件名写进去
-	std::string filename(filenamelength, '\0');
+  // 接收文件名长度
+  if (!recvAll(client_fd, reinterpret_cast<char *>(&filenamelength),
+               sizeof(filenamelength))) {
+    throw std::runtime_error("filenamelength receive failed");
+  };
+  // 检查文件名长度是否合规
+  if (filenamelength == 0 || filenamelength > 260) {
+    throw std::runtime_error("invalid filename length");
+  }
+  logger.info("Received filename length: " + std::to_string(filenamelength));
+  // 接收文件大小
+  if (!recvAll(client_fd, reinterpret_cast<char *>(&filesize),
+               sizeof(filesize))) {
+    throw std::runtime_error("filesize receive failed");
+  };
+  logger.info("Received file size: " + std::to_string(filesize));
+  // 接收文件名
+  // 创建一个长度为 filenamelength 的字符串，并用 '\0' 填充
+  // 先分配出足够的空间，让 recv() 把文件名写进去
+  std::string filename(filenamelength, '\0');
 
-	if (!recvAll(client_fd, filename.data(), static_cast<int>(filenamelength))) {
-		throw std::runtime_error("filename receive failed");
-	};
-	logger.info("Received filename: " + filename);
-	// 接收文件内容
-	std::fstream file(filename, std::ios::binary);
-	if (!file) {
-		throw std::runtime_error("file open failed");
-	}
+  if (!recvAll(client_fd, filename.data(), static_cast<int>(filenamelength))) {
+    throw std::runtime_error("filename receive failed");
+  };
+  logger.info("Received filename: " + filename);
+  // 接收文件内容
+  std::fstream file(filename, std::ios::binary);
+  if (!file) {
+    throw std::runtime_error("file open failed");
+  }
 
-	char buffer[256];
-	std::uint64_t remain = filesize;
-	while (remain > 0) {
-		int min = static_cast<int>(std::min<std::uint64_t>(remain, sizeof(buffer)));
-		if (!recvAll(client_fd, buffer, min)) {
-			throw std::runtime_error("file receive error");
-		};
-		file.write(buffer, min);
-		remain -= min;
-	}
-	logger.info("Expected bytes to write: " + std::to_string(filesize) + " B");
-	logger.info("Bytes written: " + std::to_string(filesize - remain) + " B");
-	if (remain != 0) {
-		logger.error("Failed to receive complete file");
-		logger.error("Remaining bytes: " + std::to_string(remain) + " B");
-	}
+  char buffer[256];
+  std::uint64_t remain = filesize;
+  while (remain > 0) {
+    int min = static_cast<int>(std::min<std::uint64_t>(remain, sizeof(buffer)));
+    if (!recvAll(client_fd, buffer, min)) {
+      throw std::runtime_error("file receive error");
+    };
+    file.write(buffer, min);
+    remain -= min;
+  }
+  logger.info("Expected bytes to write: " + std::to_string(filesize) + " B");
+  logger.info("Bytes written: " + std::to_string(filesize - remain) + " B");
+  if (remain != 0) {
+    logger.error("Failed to receive complete file");
+    logger.error("Remaining bytes: " + std::to_string(remain) + " B");
+  }
 
 	shutdown(server_fd, SD_BOTH);
 	closesocket(server_fd);
