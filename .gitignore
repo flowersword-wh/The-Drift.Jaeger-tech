@@ -40,3 +40,4 @@ build/
 *.obj
 .obsidian/
 fileoverview.txt
+.xmake/
