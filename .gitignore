@@ -39,3 +39,4 @@ build/
 *.exe
 *.obj
 .obsidian/
+fileoverview.txt
