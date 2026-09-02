@@ -1,3 +1,4 @@
+use chrono::Local;
 use std::fs::File;
 use std::io::{self, Write};
 use std::path::Path;
@@ -6,6 +7,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::log::LOGGER;
+use crate::sandbox::Sandbox;
 
 const PROCESS_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -50,13 +52,24 @@ pub fn runner(project_path: &Path) -> ExitCode {
     LOGGER.info("Running tests...");
     LOGGER.info(&format!("Project path：{}", project_path.display()));
 
+    LOGGER.info("Initializing sandbox...");
+    let sandbox = Sandbox::new();
+    let sandbox_dir = &sandbox.unwrap().dir;
+    LOGGER.info(format!("Initialized Sandbox path：{}", sandbox_dir.display()).as_str());
+
     let server_dir = project_path.join("test/server_test");
     let client_dir = project_path.join("test/client_test");
 
     let server_exe = server_dir.join("server.exe");
     let client_exe = client_dir.join("client.exe");
-    let server_log = server_dir.join("server.log");
-    let client_log = client_dir.join("client.log");
+
+    let time = Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
+    let log_dir = project_path.join("logs");
+    if !log_dir.exists() {
+        std::fs::create_dir(log_dir).expect("Failed to create log directory");
+    }
+    let server_log = project_path.join(format!("logs/server-{time}.log"));
+    let client_log = project_path.join(format!("logs/client-{time}.log"));
 
     let (server_stdout, server_stderr) = match log_streams(&server_log) {
         Ok(streams) => streams,
