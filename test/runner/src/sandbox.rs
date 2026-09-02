@@ -51,15 +51,16 @@ impl Sandbox {
         let dir = self.child_path(name)?;
 
         if dir.exists() {
-            LOGGER.error("Sandbox already exists.");
-
-            return Err(io::Error::new(
-                io::ErrorKind::AlreadyExists,
-                "sandbox already exists",
-            ));
+            fs::remove_dir_all(&dir)?;
         }
         let server_dir = dir.join("server");
         let client_dir = dir.join("client");
+        if server_dir.exists() {
+            fs::remove_dir_all(&server_dir)?;
+        }
+        if client_dir.exists() {
+            fs::remove_dir_all(&client_dir)?;
+        }
 
         fs::create_dir(&dir)?;
         fs::create_dir(&server_dir)?;
