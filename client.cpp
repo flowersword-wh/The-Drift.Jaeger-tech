@@ -1,5 +1,6 @@
 
 
+#include <cstddef>
 #include <filesystem>
 #define WIN32_LEAN_AND_MEAN
 
@@ -8,6 +9,7 @@
 #include <cstdint>
 #include <fstream>
 #include <set>
+#include <vector>
 #include <stdexcept>
 #include <string>
 #include <sys/stat.h>
@@ -53,7 +55,7 @@ bool recvAll(SOCKET fd, char *data, int len)
 	}
 	return true;
 }
-int main()
+int main(int argc, char *argv[])
 {
 	// 启动程序 初始化Winsock
 	Logger logger;
@@ -115,8 +117,8 @@ int main()
 	// sendAll(client_fd, ask_msg.data() ,(int)(ask_msg.size()));
 
 	// 6. 读取服务端发来的文件夹内容
-	std::uint32_t overviewSize;
-	std::uint32_t overview;
+	std::uint64_t overviewSize;
+	std::uint64_t overview;
 
 	// 接收概览文件大小
 	logger.info("Receiving server folder overview...");
@@ -164,60 +166,86 @@ int main()
 			serverFiles.insert(filename);
 		}
 	}
-	// 遍历查找 缺失就发送
+	// 遍历查找 缺失就标记 记录缺失数
+	int fileCount = 0;
+	struct file {
+		fs::path path;
+		size_t size;
+		std::string name;
+	};
+	std::vector<file> filelost{};
 	logger.info("Starting file synchronization...");
+
 	for (const auto &entry : fs::directory_iterator(folderPath)) {
 		std::string currentFile = entry.path().filename().string();
 
 		if (serverFiles.find(currentFile) == serverFiles.end()) {
-			logger.info("Sending file: " + currentFile);
-			// 创建buffer缓冲区
-			char buffer[BUF_SIZE] = {0};
-			// 取得当前要传输的文件信息
-			auto filePath = entry.path();
-			auto filesize = (uint64_t) fs::file_size(filePath);
-			std::uint32_t filenamelength = (std::uint32_t) ((currentFile.size()));
-			logger.info("File: " + std::string(currentFile));
-			logger.info("File size: " + std::to_string(filesize) + " B");
-
-			// 发送文件名长度
-			logger.info("Sending filename length...");
-			if (!sendAll(client_fd, &filenamelength, sizeof(filenamelength))) {
-				throw std::runtime_error("filenamelength send failed");
-			}
-			// 发送文件大小 // filesize 得到的是文件大小
-			// sizeof(filesize)表示这个文件大小数值 占用多少字节
-			logger.info("Sending file size...");
-			if (!sendAll(client_fd, &filesize, sizeof(filesize))) {
-				throw std::runtime_error("filesize send failed");
-			}
-			// 发送文件名
-			logger.info("Sending filename...");
-			if (!sendAll(client_fd, currentFile.data(), (int) (currentFile.size()))) {
-				throw std::runtime_error("filename send failed");
-			}
-			// 发送文件内容
-			logger.info("Sending file content...");
-			std::ifstream file(filePath, std::ios::binary);
-			if (!file) {
-				throw std::runtime_error("file open failed");
-			}
-			while (file.read(buffer, sizeof(buffer)) || file.gcount() > 0) {
-				std::streamsize count = file.gcount();
-				if (count > 0) {
-					if (!sendAll(client_fd, buffer, count)) {
-						throw std::runtime_error("file send failed");
-					};
-				}
-			}
-			file.close();
-			logger.info("File sent: " + std::to_string(filesize) + " B");
+			filelost.push_back({entry.path(), entry.file_size(), currentFile});
+			fileCount++;
 		}
 	}
-  logger.info("File synchronization completed.");
+
+	// 发送缺失文件数给server
+	if (!sendAll(client_fd, &fileCount, sizeof(fileCount))) {
+		throw std::runtime_error("fileCount send failed");
+	}
+
+	int count = 0;
+
+	for (const auto &entry : filelost) {
+		if (count >= fileCount)
+			break;
+		logger.info("Sending file: " + filelost[count].name);
+		// 创建buffer缓冲区
+		char buffer[BUF_SIZE] = {0};
+		// 取得当前要传输的文件信息
+		auto filePath = filelost[count].path;
+		auto filesize = (uint64_t) fs::file_size(filePath);
+		std::uint32_t filenamelength =
+				(std::uint32_t) (filelost[count].name.size());
+		logger.info("File: " + std::string(filelost[count].name));
+		logger.info("File size: " + std::to_string(filesize) + " B");
+
+		// 发送文件名长度
+		logger.info("Sending filename length...");
+		if (!sendAll(client_fd, &filenamelength, sizeof(filenamelength))) {
+			throw std::runtime_error("filenamelength send failed");
+		}
+		// 发送文件大小 // filesize 得到的是文件大小
+		// sizeof(filesize)表示这个文件大小数值 占用多少字节
+		logger.info("Sending file size...");
+		if (!sendAll(client_fd, &filesize, sizeof(filesize))) {
+			throw std::runtime_error("filesize send failed");
+		}
+		// 发送文件名
+		logger.info("Sending filename...");
+		if (!sendAll(client_fd, filelost[count].name.data(),
+								 (int) (filelost[count].name.size()))) {
+			throw std::runtime_error("filename send failed");
+		}
+		// 发送文件内容
+		logger.info("Sending file content...");
+		std::ifstream file(filePath, std::ios::binary);
+		if (!file) {
+			throw std::runtime_error("file open failed");
+		}
+		while (file.read(buffer, sizeof(buffer)) || file.gcount() > 0) {
+			std::streamsize count = file.gcount();
+			if (count > 0) {
+				if (!sendAll(client_fd, buffer, count)) {
+					throw std::runtime_error("file send failed");
+				};
+			}
+		}
+		file.close();
+		logger.info("File sent: " + std::to_string(filesize) + " B");
+		count++;
+	}
+	logger.info("File synchronization completed.");
 	shutdown(client_fd, SD_BOTH);
 	closesocket(client_fd);
 	WSACleanup();
 	logger.info("Connection closed.");
 	return 0;
 }
+
