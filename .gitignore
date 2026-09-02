@@ -46,3 +46,4 @@ test/client_test/
 test/server_test/
 compile_commands.json
 logs/
+sandbox/

@@ -10,7 +10,7 @@ fn create_hello_demo_test(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn create_just_demo_test(dir_path: &PathBuf) -> bool {
+pub fn create_just_demo_test(dir_path: &PathBuf) -> bool {
     if let Err(msg) = create_hello_demo_test(dir_path) {
         LOGGER.error(&msg);
         return false;
