@@ -70,11 +70,8 @@ int main(int argc, char *argv[])
 	}
 	logger.info("Winsock initialized.");
 
-	// 提示输入服务端同步目录
-	std::string folderpath;
-	logger.info("Enter the server synchronization folder path:");
-	std::getline(std::cin, folderpath);
-
+	//命令行输入要同步的目录
+	std::string folderpath = argv[1];
 	// 校验目录是否存在、是否为文件夹
 	try {
 		// 检查是否存在
