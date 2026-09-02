@@ -6,6 +6,7 @@ use std::process::{Child, Command, ExitCode, ExitStatus, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crate::case::{self, just_demo};
 use crate::log::LOGGER;
 use crate::sandbox::Sandbox;
 
@@ -44,7 +45,6 @@ fn wait_with_timeout(child: &mut Child, timeout: Duration) -> io::Result<Process
 fn log_streams(path: &Path) -> io::Result<(Stdio, Stdio)> {
     let stdout = File::create(path)?;
     let stderr = stdout.try_clone()?;
-
     Ok((Stdio::from(stdout), Stdio::from(stderr)))
 }
 
@@ -53,8 +53,8 @@ pub fn runner(project_path: &Path) -> ExitCode {
     LOGGER.info(&format!("Project path：{}", project_path.display()));
 
     LOGGER.info("Initializing sandbox...");
-    let sandbox = Sandbox::new();
-    let sandbox_dir = &sandbox.unwrap().dir;
+    let sandbox = Sandbox::new().expect("Failed to initialize sandbox");
+    let sandbox_dir = &sandbox.dir;
     LOGGER.info(format!("Initialized Sandbox path：{}", sandbox_dir.display()).as_str());
 
     let server_dir = project_path.join("test/server_test");
@@ -70,6 +70,15 @@ pub fn runner(project_path: &Path) -> ExitCode {
     }
     let server_log = project_path.join(format!("logs/server-{time}.log"));
     let client_log = project_path.join(format!("logs/client-{time}.log"));
+
+    sandbox
+        .create("just_demo")
+        .expect("Failed to create sandbox");
+    let sandbox_client_dir = sandbox_dir.join("just_demo/client");
+    let sandbox_server_dir = sandbox_dir.join("just_demo/server");
+    // println!("sandbox_client_dir: {}", sandbox_client_dir.display());
+
+    just_demo::create_just_demo_test(&sandbox_client_dir);
 
     let (server_stdout, server_stderr) = match log_streams(&server_log) {
         Ok(streams) => streams,
@@ -103,7 +112,7 @@ pub fn runner(project_path: &Path) -> ExitCode {
         .stdin(Stdio::piped())
         .stdout(server_stdout)
         .stderr(server_stderr)
-        .arg(".") // By default, tests use the test directories located within the `test` folder.
+        .arg(sandbox_server_dir) // By default, tests use the test directories located within the `test` folder.
         .spawn()
     {
         Ok(process) => process,
@@ -129,7 +138,7 @@ pub fn runner(project_path: &Path) -> ExitCode {
         .stdin(Stdio::null())
         .stdout(client_stdout)
         .stderr(client_stderr)
-        .arg(".") // By default, tests use the test directories located within the `test` folder.
+        .arg(sandbox_client_dir) // By default, tests use the test directories located within the `test` folder.
         .spawn()
     {
         Ok(process) => process,
