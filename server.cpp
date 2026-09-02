@@ -56,21 +56,14 @@ bool recvAll(SOCKET fd, char *data, int len)
 }
 int main(int argc, char *argv[])
 {
-	// 启动程序 初始化Winsock
-	Logger logger;
-	logger.info("Server starting...");
-	logger.info("Setting console output code page to UTF-8...");
-	SetConsoleOutputCP(CP_UTF8);
-	logger.info("Console output code page set to UTF-8.");
-	logger.info("Initializing Winsock...");
-	WSADATA wsaData;
-	int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
-	if (result != 0) {
-		throw std::runtime_error("WSAStartup failed");
-	}
-	logger.info("Winsock initialized.");
 
+	Logger logger;
 	// 命令行输入要同步的目录
+	if (argc != 2) {
+		logger.error("Missing synchronization folder path.");
+		logger.error("Usage: " + std::string(argv[0]) + " <sync-folder>");
+		return 1;
+	}
 	std::string folderpath = argv[1];
 	// 校验目录是否存在、是否为文件夹
 	try {
@@ -103,6 +96,19 @@ int main(int argc, char *argv[])
 	std::fseek(fp, 0, SEEK_END);
 	overviewSize = ftell(fp);
 	fclose(fp);
+
+	// 启动程序 初始化Winsock
+	logger.info("Server starting...");
+	logger.info("Setting console output code page to UTF-8...");
+	SetConsoleOutputCP(CP_UTF8);
+	logger.info("Console output code page set to UTF-8.");
+	logger.info("Initializing Winsock...");
+	WSADATA wsaData;
+	int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
+	if (result != 0) {
+		throw std::runtime_error("WSAStartup failed");
+	}
+	logger.info("Winsock initialized.");
 
 	// 1. 创建监听套接字 (AF_INET=IPv4, SOCK_STREAM=TCP)
 	SOCKET server_fd = socket(AF_INET, SOCK_STREAM, 0);
