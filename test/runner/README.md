@@ -1,6 +1,8 @@
 # Rust 集成测试运行器
 
-该程序负责构建后的端到端测试编排。被测程序仍然是 C++ 编写的`server.exe` 和 `client.exe`，`Rust runner` 负责准备测试数据、启动两个进程、重定向日志、等待执行结果以及清理超时进程。
+该程序负责构建后的端到端测试编排。被测程序仍然是 C++ 编写的 `server.exe`
+和 `client.exe`，Rust runner 负责准备测试数据、启动两个进程、重定向日志、
+等待执行结果以及清理超时进程。
 
 ## 当前能力
 
@@ -11,9 +13,11 @@
 - 将每个进程的 stdout 和 stderr 合并到各自的日志文件。
 - 进程超过 10 秒未退出时自动终止，避免留下后台进程。
 - 根据服务端和客户端的退出状态返回成功或失败。
+- 使用全局 `LOGGER` 输出 runner 自身的运行信息。
 - 支持通过 xmake 构建和运行。
 
-当前只有一个直接写在 `src/main.rs` 中的测试流程。后续会将测试用例拆分到独立的 `cases` 模块和 fixture 目录中。
+进程编排已经移动到 `src/runner.rs`，日志实现位于 `src/log.rs`，文件验证位于
+`src/verification.rs`。当前仍只有一个基础测试流程，测试案例模块正在建设中。
 
 ## 目录布局
 
@@ -24,7 +28,13 @@ test/
 │  ├─ Cargo.lock
 │  ├─ README.md
 │  └─ src/
-│     └─ main.rs
+│     ├─ main.rs
+│     ├─ log.rs
+│     ├─ runner.rs
+│     ├─ verification.rs
+│     └─ case/
+│        ├─ mod.rs
+│        └─ just_demo.rs
 ├─ server_test/
 │  ├─ server.exe
 │  └─ server.log
@@ -62,7 +72,8 @@ xmake build test_runner
 xmake run test_runner
 ```
 
-`test_runner` 依赖 `server` 和 `client`。构建时，`xmake` 会先生成两个 `C++` 程序并将其复制到对应测试目录，然后调用 Cargo 构建 runner。
+`test_runner` 依赖 `server` 和 `client`。构建时，xmake 会先生成两个 C++ 程序
+并将其复制到对应测试目录，然后调用 Cargo 构建 runner。
 
 Release 模式：
 
@@ -94,6 +105,24 @@ test/client_test/client.exe
 cargo run --manifest-path test\runner\Cargo.toml
 ```
 
+## 命令行参数
+
+`Cargo.toml` 已经引入 `clap`，但当前 `main.rs` 尚未接入参数解析；现在运行
+runner 时会直接执行默认测试流程。后续接入 `clap` 后，计划支持：
+
+```powershell
+# 运行指定测例
+xmake run test_runner -- --case basic_transfer
+
+# 运行全部测例
+xmake run test_runner -- --all
+
+# 列出可用测例
+xmake run test_runner -- --list
+```
+
+其中 xmake 和 runner 之间的 `--` 用于分隔参数，后面的内容才会传给 Rust 程序。
+
 ## 日志
 
 每次运行会覆盖上一次日志：
@@ -103,7 +132,8 @@ test/server_test/server.log
 test/client_test/client.log
 ```
 
-每个文件包含对应进程的 stdout 和 stderr。runner 当前还会在进程结束后把日志内容输出到终端，方便立即查看失败位置。
+每个文件包含对应进程的 stdout 和 stderr。runner 当前还会在进程结束后通过全局
+logger 将日志内容输出到终端，方便立即查看失败位置。
 
 输出路径可能带有 Windows 的 `\\?\` 前缀，例如：
 
@@ -130,8 +160,9 @@ test/client_test/client.log
 
 - 服务端和客户端仍固定使用端口 `8080`，因此不能安全地并行运行多个测例。
 - 客户端 stdin 当前设置为 `null`；客户端如果要求交互式输入，需要改为由 runner 通过管道提供。
-- 测试数据和期望结果尚未抽象为独立测例。
+- 测试数据和期望结果尚未完全抽象为独立测例。
 - 当前测试会覆盖 `client_test/demo.txt` 和已有日志文件。
+- 当前 runner 尚未真正解析命令行参数。
 
 ## 后续拆分建议
 
@@ -148,4 +179,5 @@ src/
    └─ basic_transfer.rs
 ```
 
-`main.rs` 最终只负责选择测例并调用 runner；测试输入、stdin、超时和期望结果由各个测例独立描述。
+`main.rs` 最终只负责解析参数、选择测例并调用 runner；测试输入、stdin、超时和
+期望结果由各个测例独立描述。
