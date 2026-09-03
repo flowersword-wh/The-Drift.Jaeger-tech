@@ -67,24 +67,9 @@ int main(int argc, char *argv[])
 	}
 	std::string folderpath = argv[1];
 	// 校验目录是否存在、是否为文件夹
-	try {
-		// 检查是否存在
-		if (!fs::exists(folderpath)) {
-			logger.error("路径不存在！");
-			return -1;
-		}
-		if (!fs::is_directory(folderpath)) {
-			logger.error("文件夹不存在！");
-			return -1;
-		}
-	} catch (std::exception &e) {
-		logger.error(e.what());
-		return -1;
-	}
-	// 扫描目录，生成文件夹概览
-	if (getFileOverview(folderpath) != 0) {
-		logger.error("get overviewfile failed");
-		return -1;
+	if(!is_CorrectPath(folderpath)){
+		logger.error("create overviewfile failed");
+		return 0;
 	};
 	// 得到概览文件大小
 	std::uint64_t overviewSize;

@@ -155,7 +155,7 @@ int main(int argc, char *argv[])
 		logger.error("Remaining bytes: " + std::to_string(remain) + " B");
 	}
 	logger.info("Server folder overview received.");
-	// 7. 已经接收了服务端传来的概览文件
+	// 7. 已经接收了服务端传来的概览文件路径
 	//    此时读取要传输的文件夹 比对服务端缺失的文件 缺失就发送
 	// 把fileoverview放到set里
 	std::set<std::string> serverFiles;
@@ -181,18 +181,18 @@ int main(int argc, char *argv[])
 	logger.info("Starting file synchronization...");
 
 	for (const auto &entry : fs::directory_iterator(folderPath)) {
-		std::string currentFile = entry.path().filename().string();
-		if (currentFile == "client.exe") {
+		std::string currentFilePath = entry.path().string();
+		if (currentFilePath == "client.exe") {
 			continue;
 		}
 
-		if (serverFiles.find(currentFile) == serverFiles.end()) {
+		if (serverFiles.find(currentFilePath) == serverFiles.end()) {
 			// 判断指向对象是否是目录（文件夹），如果是,则创建同名文件夹
 			if (entry.is_directory()) {
-				filelost.push_back({entry.path(), 0, currentFile, true});
+				filelost.push_back({entry.path(), 0, currentFilePath, true});
 			} else {
 				filelost.push_back(
-						{entry.path(), entry.file_size(), currentFile, false});
+						{entry.path(), entry.file_size(), currentFilePath, false});
 				fileCount++;
 			}
 		}
@@ -205,7 +205,7 @@ int main(int argc, char *argv[])
 
 	for (const auto &entry : filelost) {
 		if (entry.is_folder) {
-			continue;
+			
 		}
 		
 		logger.info("Sending file: " + entry.name);

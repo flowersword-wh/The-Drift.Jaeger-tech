@@ -15,5 +15,10 @@ int main()
 		std::cout << "获取失败" << std::endl;
 	}
 
+	is_CorrectPath(path);
+
+	readfolder(path);
+	
+
 	return 0;
 }

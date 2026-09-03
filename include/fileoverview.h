@@ -12,3 +12,7 @@
 
 namespace fs = std::filesystem;
 int getFileOverview(const std::string &path);
+
+void readfolder(std::string & folderPath);
+
+bool is_CorrectPath(std::string & path);

@@ -1,39 +1,37 @@
 
 #include "include/fileoverview.h"
+#include <fileapi.h>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
 #include <string>
 
-int getFileOverview(const std::string &folderPath)
+bool is_CorrectPath(std::string &path)
 {
-	try {
-		// 检查是否存在
-		if (!fs::exists(folderPath)) {
+		if (!fs::exists(path)) {
 			std::cerr << "路径不存在！" << std::endl;
-			return -1;
+			return false;
 		}
-		if (!fs::is_directory(folderPath)) {
+		if (!fs::is_directory(path)) {
 			std::cerr << "文件夹不存在！" << std::endl;
-			return -1;
+			return false;
 		}
+		return true;
+}
 
-		// 遍历文件夹 将所有文件名写入txt文件
-		std::ofstream file("fileoverview.txt", std::ios::out);
-		if (!file) {
-			std::cerr << "Unable to open file!" << std::endl;
-			return -1;
-		}
-		for (const auto &entry : fs::directory_iterator(folderPath)) {
-			file << entry.path().filename().string() << std::endl;
-			if (!file) {
-				std::cerr << "写入文件失败！" << std::endl;
-				return -1;
-			}
-		}
-	} catch (const fs::filesystem_error &e) {
-		std::cerr << "文件系统错误： " << e.what() << std::endl;
-		return -1;
-	} catch (const std::exception &e) {
-		std::cerr << "其他错误： " << e.what() << std::endl;
-		return -1;
+void readfolder(std::string &folderPath)
+{
+	std::ofstream writeFolderFile("overviewfile.txt");
+	if (!writeFolderFile) {
+		std::cerr << "open file failed" << std::endl;
 	}
-	return 0;
+	for (const auto &entry : fs::directory_iterator(folderPath)) {
+		if (!entry.is_directory()) {
+			writeFolderFile << entry.path().string() << std::endl;
+			if (!writeFolderFile) {
+				std::cerr << "write file failed" << std::endl;
+			}
+		} else
+			readfolder((std::string &) (entry.path()));
+	}
 }
