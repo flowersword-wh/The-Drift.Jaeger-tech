@@ -99,8 +99,7 @@ cargo build --manifest-path test\runner\Cargo.toml
 测试日志位于：
 
 ```text
-test/server_test/server.log
-test/client_test/client.log
+logs/date-time.log
 ```
 
 测试 runner 默认在进程超过 10 秒未退出时终止进程。若测试失败，建议优先检查上述两个日志文件。
