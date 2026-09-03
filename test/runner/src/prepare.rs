@@ -6,7 +6,7 @@ use std::{
     time::Instant,
 };
 
-use crate::log::LOGGER;
+use crate::log_error;
 use crate::process::terminate_child_until;
 
 fn log_streams(path: &Path) -> io::Result<(Stdio, Stdio)> {
@@ -37,7 +37,7 @@ impl ExecutableProgram {
         let (stdout, stderr) = match log_streams(&log) {
             Ok(streams) => streams,
             Err(error) => {
-                LOGGER.error(&format!(
+                log_error!(&format!(
                     "Unable to create {}-side log. {}：{error}",
                     self.name,
                     log.display()
@@ -73,7 +73,7 @@ impl ExecutableProgram {
         {
             Ok(process) => Ok(process),
             Err(err) => {
-                LOGGER.error(&format!("Failed to run {}: {err}", self.name));
+                log_error!(&format!("Failed to run {}: {err}", self.name));
                 return Err(err);
             }
         }
@@ -89,7 +89,7 @@ pub struct PreparedProcesses {
 
 fn prepare_log_dir(log_dir: &Path) -> std::io::Result<()> {
     if log_dir.exists() && !log_dir.is_dir() {
-        LOGGER.error(format!("{} is not a directory", log_dir.display()).as_str());
+        log_error!(format!("{} is not a directory", log_dir.display()).as_str());
         return Err(std::io::Error::new(
             std::io::ErrorKind::NotADirectory,
             "log directory is not a directory",
@@ -121,10 +121,10 @@ pub fn prepare(
     let client_child = match client.prepare_executable_program(project_path, client_sync_dir) {
         Ok(child) => child,
         Err(error) => {
-            LOGGER.error(&format!("Failed to start client; stopping server: {error}"));
+            log_error!(&format!("Failed to start client; stopping server: {error}"));
 
             if let Err(cleanup_error) = terminate_child_until(&mut server_child, cleanup_deadline) {
-                LOGGER.error(&format!("Failed to clean up server: {cleanup_error}"));
+                log_error!(&format!("Failed to clean up server: {cleanup_error}"));
             }
 
             return Err(error);

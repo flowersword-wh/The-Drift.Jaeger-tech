@@ -3,7 +3,7 @@ use std::process::Child;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::log::LOGGER;
+use crate::log_error;
 
 pub(crate) fn terminate_child_until(child: &mut Child, deadline: Instant) -> io::Result<()> {
     match child.try_wait() {
@@ -11,7 +11,9 @@ pub(crate) fn terminate_child_until(child: &mut Child, deadline: Instant) -> io:
         Ok(None) => {}
         Err(wait_error) => {
             if let Err(kill_error) = child.kill() {
-                LOGGER.error(&format!("Failed to terminate process after try_wait error: {wait_error}; kill failed: {kill_error}"));
+                log_error!(&format!(
+                    "Failed to terminate process after try_wait error: {wait_error}; kill failed: {kill_error}"
+                ));
                 return Err(wait_error);
             }
 
@@ -43,7 +45,7 @@ pub(crate) fn terminate_child_until(child: &mut Child, deadline: Instant) -> io:
         thread::sleep(Duration::from_millis(25));
     }
 
-    LOGGER.error("Timed out waiting for child process termination.");
+    log_error!("Timed out waiting for child process termination.");
     Err(io::Error::new(
         io::ErrorKind::TimedOut,
         "timed out waiting for child process termination",

@@ -14,6 +14,10 @@ impl<'a> DefaultCase<'a> {
 }
 
 impl TestCase for DefaultCase<'_> {
+    fn description(&self) -> &'static str {
+        "Create the default server and client directories without modifying existing user data. This case provides an empty workspace for users to add their own C++ test inputs."
+    }
+
     fn prepare(&self) -> std::io::Result<()> {
         self.sandbox.create_dir(Path::new("server"))?;
         self.sandbox.create_dir(Path::new("client"))?;
