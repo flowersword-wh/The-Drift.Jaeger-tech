@@ -2,7 +2,7 @@ use chrono::Local;
 use std::{
     fs::File,
     io,
-    path::Path,
+    path::{Path, PathBuf},
     process::{Child, Command, Stdio},
 };
 
@@ -30,7 +30,7 @@ impl ExecutableProgram {
         }
     }
 
-    fn prepare_stdio(&mut self, project_path: &Path) -> Result<(), std::io::Error> {
+    fn prepare_stdio(&mut self, project_path: &Path) -> Result<PathBuf, std::io::Error> {
         let time = Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
         let log = project_path.join(format!("logs/{}-{time}.log", self.name));
 
@@ -52,7 +52,7 @@ impl ExecutableProgram {
         self.stdout = stdout;
         self.stderr = stderr;
 
-        Ok(())
+        Ok(log)
     }
 
     fn prepare_executable_program(
@@ -80,6 +80,13 @@ impl ExecutableProgram {
     }
 }
 
+pub struct PreparedProcesses {
+    pub server: Child,
+    pub client: Child,
+    pub server_log: PathBuf,
+    pub client_log: PathBuf,
+}
+
 fn prepare_log_dir(project_path: &Path) -> std::io::Result<()> {
     let log_dir = project_path.join("logs");
     if log_dir.exists() && !log_dir.is_dir() {
@@ -100,16 +107,37 @@ pub fn prepare(
     project_path: &Path,
     server_sync_dir: &Path,
     client_sync_dir: &Path,
-) -> Result<(Child, Child), std::io::Error> {
+) -> Result<PreparedProcesses, std::io::Error> {
     prepare_log_dir(project_path)?;
 
     let mut server = ExecutableProgram::new("server".to_string());
     let mut client = ExecutableProgram::new("client".to_string());
-    server.prepare_stdio(project_path)?;
-    client.prepare_stdio(project_path)?;
+    let server_log = server.prepare_stdio(project_path)?;
+    let client_log = client.prepare_stdio(project_path)?;
 
-    let server_child = server.prepare_executable_program(project_path, server_sync_dir)?;
-    let client_child = client.prepare_executable_program(project_path, client_sync_dir)?;
+    let mut server_child = server.prepare_executable_program(project_path, server_sync_dir)?;
 
-    Ok((server_child, client_child))
+    let client_child = match client.prepare_executable_program(project_path, client_sync_dir) {
+        Ok(child) => child,
+        Err(error) => {
+            LOGGER.error(&format!("Failed to start client; stopping server: {error}"));
+
+            if let Err(kill_error) = server_child.kill() {
+                LOGGER.error(&format!("Failed to stop server: {kill_error}"));
+            }
+
+            if let Err(wait_error) = server_child.wait() {
+                LOGGER.error(&format!("Failed to reap server: {wait_error}"));
+            }
+
+            return Err(error);
+        }
+    };
+
+    Ok(PreparedProcesses {
+        server: server_child,
+        client: client_child,
+        server_log,
+        client_log,
+    })
 }

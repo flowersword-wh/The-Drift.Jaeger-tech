@@ -17,7 +17,5 @@ fn main() -> ExitCode {
         .canonicalize()
         .unwrap_or_else(|_| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.."));
 
-    runner::runner(&project_dir);
-
-    ExitCode::SUCCESS
+    runner::runner(&project_dir)
 }
