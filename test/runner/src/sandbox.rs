@@ -166,6 +166,11 @@ impl Sandbox {
         &self.name
     }
 
+    /// Validate a path that must stay inside this sandbox.
+    pub fn validate_path(&self, path: &Path) -> io::Result<PathBuf> {
+        validate_path(&self.dir, path)
+    }
+
     /// Resolve a relative descendant for external tools (e.g. the C++ programs).
     /// This does not restrict the external process's filesystem permissions.
     pub fn resolve_path(&self, relative: &Path) -> io::Result<PathBuf> {
