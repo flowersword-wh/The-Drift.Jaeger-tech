@@ -108,6 +108,33 @@ impl SandboxManager {
         Ok(self.created.last().unwrap())
     }
 
+    /// Open an existing sandbox or create it without removing its contents.
+    pub fn open_or_create_sandbox(&mut self, name: &str) -> io::Result<&Sandbox> {
+        let dir = self.child_path(name)?;
+        if dir.try_exists()? {
+            let metadata = fs::symlink_metadata(&dir)?;
+            reject_link(&metadata)?;
+            if !metadata.is_dir() {
+                return Err(io::Error::new(
+                    io::ErrorKind::NotADirectory,
+                    "sandbox path is not a directory",
+                ));
+            }
+        } else {
+            fs::create_dir(&dir)?;
+        }
+
+        self.created.retain(|sandbox| sandbox.dir != dir);
+        let sandbox = Sandbox {
+            name: name.to_owned(),
+            dir: dir.canonicalize()?,
+        };
+        sandbox.create_dir(Path::new("server"))?;
+        sandbox.create_dir(Path::new("client"))?;
+        self.created.push(sandbox);
+        Ok(self.created.last().unwrap())
+    }
+
     pub fn get_sandbox(&self, name: &str) -> io::Result<&Sandbox> {
         let dir = self.child_path(name)?;
         let sandbox = self
