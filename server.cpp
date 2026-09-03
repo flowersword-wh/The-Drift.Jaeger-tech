@@ -31,7 +31,7 @@ int judge(int result, const std::string &message)
 bool sendAll(SOCKET fd, const void *data, int len)
 {
 	int sent = 0;
-	const char *bytes = static_cast<const char *>(data);
+	const char *bytes = (char *) (data);
 	while (sent < len) {
 		int result = send(fd, bytes + sent, len - sent, 0);
 		if (result <= 0) {
@@ -42,11 +42,12 @@ bool sendAll(SOCKET fd, const void *data, int len)
 	return true;
 }
 
-bool recvAll(SOCKET fd, char *data, int len)
+bool recvAll(SOCKET fd, void *data, int len)
 {
 	int received = 0;
+	char *bytes = (char *) (data);
 	while (received < len) {
-		int result = recv(fd, data + received, len - received, 0);
+		int result = recv(fd, bytes + received, len - received, 0);
 		if (result <= 0) {
 			return false;
 		}
@@ -224,6 +225,9 @@ int main(int argc, char *argv[])
 				throw std::runtime_error("file receive error");
 			};
 			file.write(buffer, min);
+			if (!file) {
+				throw std::runtime_error("file write failed");
+			}
 			remain -= min;
 		}
 
