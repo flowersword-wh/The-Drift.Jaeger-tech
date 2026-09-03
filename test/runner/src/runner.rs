@@ -1,11 +1,16 @@
-use std::fs::File;
-use std::io::{self, Write};
+use std::io;
 use std::path::Path;
-use std::process::{Child, Command, ExitCode, ExitStatus, Stdio};
+use std::process::{Child, ExitCode, ExitStatus};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use crate::case::TestCase;
+use crate::case::default::DefaultCase;
 use crate::log::LOGGER;
+use crate::prepare::prepare;
+use crate::process::terminate_child_until;
+use crate::sandbox::SandboxManager;
+use crate::verification::verify_server_contains_client_files;
 
 const PROCESS_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -21,17 +26,23 @@ impl ProcessOutcome {
     }
 }
 
-fn wait_with_timeout(child: &mut Child, timeout: Duration) -> io::Result<ProcessOutcome> {
-    let deadline = Instant::now() + timeout;
-
+fn wait_with_timeout(child: &mut Child, deadline: Instant) -> io::Result<ProcessOutcome> {
     loop {
-        if let Some(status) = child.try_wait()? {
-            return Ok(ProcessOutcome::Exited(status));
+        match child.try_wait() {
+            Ok(Some(status)) => return Ok(ProcessOutcome::Exited(status)),
+            Ok(None) => {}
+            Err(error) => {
+                if let Err(cleanup_error) = terminate_child_until(child, deadline) {
+                    LOGGER.error(&format!(
+                        "Failed to clean up process after try_wait error: {cleanup_error}"
+                    ));
+                }
+                return Err(error);
+            }
         }
 
         if Instant::now() >= deadline {
-            let _ = child.kill();
-            let _ = child.wait();
+            terminate_child_until(child, deadline)?;
             return Ok(ProcessOutcome::TimedOut);
         }
 
@@ -39,104 +50,72 @@ fn wait_with_timeout(child: &mut Child, timeout: Duration) -> io::Result<Process
     }
 }
 
-fn log_streams(path: &Path) -> io::Result<(Stdio, Stdio)> {
-    let stdout = File::create(path)?;
-    let stderr = stdout.try_clone()?;
+fn create_run_id() -> io::Result<String> {
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(io::Error::other)?
+        .as_nanos();
+    Ok(format!("{timestamp}-{}", std::process::id()))
+}
 
-    Ok((Stdio::from(stdout), Stdio::from(stderr)))
+fn report_log(name: &str, path: &Path) {
+    match std::fs::read_to_string(path) {
+        Ok(content) => LOGGER.info(&format!("{name} log ({}):\n{content}", path.display())),
+        Err(error) => LOGGER.error(&format!(
+            "Failed to read {name} log {}: {error}",
+            path.display()
+        )),
+    }
 }
 
 pub fn runner(project_path: &Path) -> ExitCode {
     LOGGER.info("Running tests...");
     LOGGER.info(&format!("Project path：{}", project_path.display()));
 
-    let server_dir = project_path.join("test/server_test");
-    let client_dir = project_path.join("test/client_test");
+    LOGGER.info("Initializing sandbox...");
+    let mut manager = SandboxManager::new().expect("Failed to initialize sandbox manager");
+    let sandbox = manager
+        .open_or_create_sandbox("default")
+        .expect("Failed to open or create default sandbox");
 
-    let server_exe = server_dir.join("server.exe");
-    let client_exe = client_dir.join("client.exe");
-    let server_log = server_dir.join("server.log");
-    let client_log = client_dir.join("client.log");
+    let default_case = DefaultCase::new(sandbox);
+    default_case
+        .prepare()
+        .expect("Failed to prepare default case");
 
-    let (server_stdout, server_stderr) = match log_streams(&server_log) {
-        Ok(streams) => streams,
-        Err(error) => {
-            LOGGER.error(&format!(
-                "Unable to create server-side log. {}：{error}",
-                server_log.display()
-            ));
-            return ExitCode::FAILURE;
-        }
-    };
+    LOGGER.info("Preparing processes...");
 
-    let (client_stdout, client_stderr) = match log_streams(&client_log) {
-        Ok(streams) => streams,
-        Err(error) => {
-            LOGGER.error(&format!(
-                "Unable to create client log. {}：{error}",
-                client_log.display()
-            ));
-            return ExitCode::FAILURE;
-        }
-    };
-
-    LOGGER.info(&format!("server: {}", server_exe.display()));
-    LOGGER.info(&format!("client: {}", client_exe.display()));
-    LOGGER.info(&format!("server log: {}", server_log.display()));
-    LOGGER.info(&format!("client log: {}", client_log.display()));
-
-    let mut server = match Command::new(&server_exe)
-        .current_dir(&server_dir)
-        .stdin(Stdio::piped())
-        .stdout(server_stdout)
-        .stderr(server_stderr)
-        .arg(".") // By default, tests use the test directories located within the `test` folder.
-        .spawn()
-    {
-        Ok(process) => process,
-        Err(err) => {
-            LOGGER.error(&format!("Failed to run server: {err}"));
-            return ExitCode::FAILURE;
-        }
-    };
-
-    if let Some(mut stdin) = server.stdin.take() {
-        if let Err(error) = writeln!(stdin, "{}", project_path.display()) {
-            LOGGER.error(&format!(
-                "Failed to write the test directory to the server.：{error}"
-            ));
-            let _ = server.kill();
-            let _ = server.wait();
-            return ExitCode::FAILURE;
-        }
-    }
-
-    let mut client = match Command::new(&client_exe)
-        .current_dir(&client_dir)
-        .stdin(Stdio::null())
-        .stdout(client_stdout)
-        .stderr(client_stderr)
-        .arg(".") // By default, tests use the test directories located within the `test` folder.
-        .spawn()
-    {
-        Ok(process) => process,
-        Err(error) => {
-            LOGGER.error(&format!("Failed to launch the client.：{error}"));
-            let _ = server.kill();
-            let _ = server.wait();
-            return ExitCode::FAILURE;
-        }
-    };
+    let run_id = create_run_id().expect("Failed to create run id");
+    LOGGER.info(&format!("Run id：{run_id}"));
+    let (server_sync_dir, client_sync_dir) = sandbox
+        .create_run(&run_id)
+        .expect("Failed to create run directories");
+    let log_dir = project_path.join("logs").join("default").join(&run_id);
+    let process_deadline = Instant::now() + PROCESS_TIMEOUT;
+    let processes = prepare(
+        project_path,
+        &server_sync_dir,
+        &client_sync_dir,
+        &log_dir,
+        process_deadline,
+    )
+    .expect("Failed to prepare processes");
+    let mut server = processes.server;
+    let mut client = processes.client;
+    let server_log = processes.server_log;
+    let client_log = processes.client_log;
+    LOGGER.info("Prepared processes.");
 
     LOGGER.info("Accessing...");
-    let client_status = wait_with_timeout(&mut client, PROCESS_TIMEOUT);
+    let client_status = wait_with_timeout(&mut client, process_deadline);
     if !matches!(&client_status, Ok(status) if status.success()) {
-        let _ = server.kill();
-        let _ = server.wait();
+        if let Err(error) = terminate_child_until(&mut server, process_deadline) {
+            LOGGER.error(&format!("Failed to clean up server process: {error}"));
+        }
     }
 
     let server_status = if matches!(&client_status, Ok(status) if status.success()) {
-        wait_with_timeout(&mut server, PROCESS_TIMEOUT)
+        wait_with_timeout(&mut server, process_deadline)
     } else {
         Err(io::Error::other("Client failed; server has terminated."))
     };
@@ -144,11 +123,27 @@ pub fn runner(project_path: &Path) -> ExitCode {
     LOGGER.info(&format!("Client status：{client_status:?}"));
     LOGGER.info(&format!("Server status：{server_status:?}"));
 
-    if matches!(client_status, Ok(status) if status.success())
-        && matches!(server_status, Ok(status) if status.success())
-    {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::FAILURE
+    let processes_succeeded = matches!(client_status, Ok(status) if status.success())
+        && matches!(server_status, Ok(status) if status.success());
+    if !processes_succeeded {
+        report_log("Server", &server_log);
+        report_log("Client", &client_log);
+        return ExitCode::FAILURE;
     }
+
+    if let Err(error) = verify_server_contains_client_files(&server_sync_dir, &client_sync_dir) {
+        LOGGER.error(&format!("Server containment verification failed: {error}"));
+        report_log("Server", &server_log);
+        report_log("Client", &client_log);
+        return ExitCode::FAILURE;
+    }
+
+    // if let Err(error) = verify_files(&server_sync_dir, &client_sync_dir) {
+    //     LOGGER.error(&format!("Verification failed: {error}"));
+    //     report_log("Server", &server_log);
+    //     report_log("Client", &client_log);
+    //     return ExitCode::FAILURE;
+    // }
+
+    ExitCode::SUCCESS
 }

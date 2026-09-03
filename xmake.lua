@@ -54,10 +54,6 @@ target("client")
       copy_exe(target, "client_test", path, os)
   end)
 
-target("fileoverview")
-  set_kind("binary")
-  add_files("fileoverview_main.cpp", "fileoverview.cpp")
-
 target("test_runner")
   set_kind("phony")
   add_deps("server", "client")
