@@ -1,12 +1,13 @@
-use chrono::Local;
 use std::{
     fs::File,
     io,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
+    time::Instant,
 };
 
 use crate::log::LOGGER;
+use crate::process::terminate_child_until;
 
 fn log_streams(path: &Path) -> io::Result<(Stdio, Stdio)> {
     let stdout = File::create(path)?;
@@ -30,9 +31,8 @@ impl ExecutableProgram {
         }
     }
 
-    fn prepare_stdio(&mut self, project_path: &Path) -> Result<PathBuf, std::io::Error> {
-        let time = Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
-        let log = project_path.join(format!("logs/{}-{time}.log", self.name));
+    fn prepare_stdio(&mut self, log_dir: &Path) -> Result<PathBuf, std::io::Error> {
+        let log = log_dir.join(format!("{}.log", self.name));
 
         let (stdout, stderr) = match log_streams(&log) {
             Ok(streams) => streams,
@@ -87,8 +87,7 @@ pub struct PreparedProcesses {
     pub client_log: PathBuf,
 }
 
-fn prepare_log_dir(project_path: &Path) -> std::io::Result<()> {
-    let log_dir = project_path.join("logs");
+fn prepare_log_dir(log_dir: &Path) -> std::io::Result<()> {
     if log_dir.exists() && !log_dir.is_dir() {
         LOGGER.error(format!("{} is not a directory", log_dir.display()).as_str());
         return Err(std::io::Error::new(
@@ -97,7 +96,7 @@ fn prepare_log_dir(project_path: &Path) -> std::io::Result<()> {
         ));
     }
     if !log_dir.exists() {
-        std::fs::create_dir(log_dir)?;
+        std::fs::create_dir_all(log_dir)?;
     }
 
     Ok(())
@@ -107,13 +106,15 @@ pub fn prepare(
     project_path: &Path,
     server_sync_dir: &Path,
     client_sync_dir: &Path,
+    log_dir: &Path,
+    cleanup_deadline: Instant,
 ) -> Result<PreparedProcesses, std::io::Error> {
-    prepare_log_dir(project_path)?;
+    prepare_log_dir(log_dir)?;
 
     let mut server = ExecutableProgram::new("server".to_string());
     let mut client = ExecutableProgram::new("client".to_string());
-    let server_log = server.prepare_stdio(project_path)?;
-    let client_log = client.prepare_stdio(project_path)?;
+    let server_log = server.prepare_stdio(log_dir)?;
+    let client_log = client.prepare_stdio(log_dir)?;
 
     let mut server_child = server.prepare_executable_program(project_path, server_sync_dir)?;
 
@@ -122,12 +123,8 @@ pub fn prepare(
         Err(error) => {
             LOGGER.error(&format!("Failed to start client; stopping server: {error}"));
 
-            if let Err(kill_error) = server_child.kill() {
-                LOGGER.error(&format!("Failed to stop server: {kill_error}"));
-            }
-
-            if let Err(wait_error) = server_child.wait() {
-                LOGGER.error(&format!("Failed to reap server: {wait_error}"));
+            if let Err(cleanup_error) = terminate_child_until(&mut server_child, cleanup_deadline) {
+                LOGGER.error(&format!("Failed to clean up server: {cleanup_error}"));
             }
 
             return Err(error);
