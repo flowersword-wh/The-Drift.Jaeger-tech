@@ -1,14 +1,15 @@
-use chrono::Local;
-use std::fs::File;
-use std::io::{self, Write};
+use std::io;
 use std::path::Path;
-use std::process::{Child, Command, ExitCode, ExitStatus, Stdio};
+use std::process::{Child, ExitCode, ExitStatus};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::case::{self, just_demo};
+use crate::case::TestCase;
+use crate::case::just_demo::JustDemo;
 use crate::log::LOGGER;
-use crate::sandbox::Sandbox;
+use crate::prepare::prepare;
+use crate::sandbox::SandboxManager;
+use crate::verification::verify_files;
 
 const PROCESS_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -42,113 +43,30 @@ fn wait_with_timeout(child: &mut Child, timeout: Duration) -> io::Result<Process
     }
 }
 
-fn log_streams(path: &Path) -> io::Result<(Stdio, Stdio)> {
-    let stdout = File::create(path)?;
-    let stderr = stdout.try_clone()?;
-    Ok((Stdio::from(stdout), Stdio::from(stderr)))
-}
-
 pub fn runner(project_path: &Path) -> ExitCode {
     LOGGER.info("Running tests...");
     LOGGER.info(&format!("Project path：{}", project_path.display()));
 
     LOGGER.info("Initializing sandbox...");
-    let sandbox = Sandbox::new().expect("Failed to initialize sandbox");
-    let sandbox_dir = &sandbox.dir;
-    LOGGER.info(format!("Initialized Sandbox path：{}", sandbox_dir.display()).as_str());
-
-    let server_dir = project_path.join("test/server_test");
-    let client_dir = project_path.join("test/client_test");
-
-    let server_exe = server_dir.join("server.exe");
-    let client_exe = client_dir.join("client.exe");
-
-    let time = Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
-    let log_dir = project_path.join("logs");
-    if !log_dir.exists() {
-        std::fs::create_dir(log_dir).expect("Failed to create log directory");
-    }
-    let server_log = project_path.join(format!("logs/server-{time}.log"));
-    let client_log = project_path.join(format!("logs/client-{time}.log"));
-
-    sandbox
-        .create("just_demo")
+    let mut manager = SandboxManager::new().expect("Failed to initialize sandbox manager");
+    let sandbox = manager
+        .create_sandbox("just_demo")
         .expect("Failed to create sandbox");
-    let sandbox_client_dir = sandbox_dir.join("just_demo/client");
-    let sandbox_server_dir = sandbox_dir.join("just_demo/server");
-    // println!("sandbox_client_dir: {}", sandbox_client_dir.display());
 
-    just_demo::create_just_demo_test(&sandbox_client_dir);
+    let demo = JustDemo::new(sandbox);
+    demo.prepare().expect("Failed to prepare sandbox");
 
-    let (server_stdout, server_stderr) = match log_streams(&server_log) {
-        Ok(streams) => streams,
-        Err(error) => {
-            LOGGER.error(&format!(
-                "Unable to create server-side log. {}：{error}",
-                server_log.display()
-            ));
-            return ExitCode::FAILURE;
-        }
-    };
+    LOGGER.info("Preparing processes...");
 
-    let (client_stdout, client_stderr) = match log_streams(&client_log) {
-        Ok(streams) => streams,
-        Err(error) => {
-            LOGGER.error(&format!(
-                "Unable to create client log. {}：{error}",
-                client_log.display()
-            ));
-            return ExitCode::FAILURE;
-        }
-    };
-
-    LOGGER.info(&format!("server: {}", server_exe.display()));
-    LOGGER.info(&format!("client: {}", client_exe.display()));
-    LOGGER.info(&format!("server log: {}", server_log.display()));
-    LOGGER.info(&format!("client log: {}", client_log.display()));
-
-    let mut server = match Command::new(&server_exe)
-        .current_dir(&server_dir)
-        .stdin(Stdio::piped())
-        .stdout(server_stdout)
-        .stderr(server_stderr)
-        .arg(sandbox_server_dir) // By default, tests use the test directories located within the `test` folder.
-        .spawn()
-    {
-        Ok(process) => process,
-        Err(err) => {
-            LOGGER.error(&format!("Failed to run server: {err}"));
-            return ExitCode::FAILURE;
-        }
-    };
-
-    if let Some(mut stdin) = server.stdin.take() {
-        if let Err(error) = writeln!(stdin, "{}", project_path.display()) {
-            LOGGER.error(&format!(
-                "Failed to write the test directory to the server.：{error}"
-            ));
-            let _ = server.kill();
-            let _ = server.wait();
-            return ExitCode::FAILURE;
-        }
-    }
-
-    let mut client = match Command::new(&client_exe)
-        .current_dir(&client_dir)
-        .stdin(Stdio::null())
-        .stdout(client_stdout)
-        .stderr(client_stderr)
-        .arg(sandbox_client_dir) // By default, tests use the test directories located within the `test` folder.
-        .spawn()
-    {
-        Ok(process) => process,
-        Err(error) => {
-            LOGGER.error(&format!("Failed to launch the client.：{error}"));
-            let _ = server.kill();
-            let _ = server.wait();
-            return ExitCode::FAILURE;
-        }
-    };
+    let server_sync_dir = sandbox
+        .resolve_path(Path::new("server"))
+        .expect("Invalid server directory");
+    let client_sync_dir = sandbox
+        .resolve_path(Path::new("client"))
+        .expect("Invalid client directory");
+    let (mut server, mut client) = prepare(project_path, &server_sync_dir, &client_sync_dir)
+        .expect("Failed to prepare processes");
+    LOGGER.info("Prepared processes.");
 
     LOGGER.info("Accessing...");
     let client_status = wait_with_timeout(&mut client, PROCESS_TIMEOUT);
@@ -165,6 +83,8 @@ pub fn runner(project_path: &Path) -> ExitCode {
 
     LOGGER.info(&format!("Client status：{client_status:?}"));
     LOGGER.info(&format!("Server status：{server_status:?}"));
+
+    verify_files(&server_sync_dir, &client_sync_dir).expect("Failed to verify files.");
 
     if matches!(client_status, Ok(status) if status.success())
         && matches!(server_status, Ok(status) if status.success())

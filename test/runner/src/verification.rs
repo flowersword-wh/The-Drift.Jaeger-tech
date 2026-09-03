@@ -40,23 +40,20 @@ fn get_dir_files_name(dir: &Path) -> Result<HashSet<String>, std::io::Error> {
     Ok(files)
 }
 
-pub fn verify_files(project_path: &Path) -> Result<(), std::io::Error> {
-    let f_dir = project_path.join("test/server_test");
-    let s_dir = project_path.join("test/client_test");
-
-    if !f_dir.is_dir() || !s_dir.is_dir() {
+pub fn verify_files(server_sync_dir: &Path, client_sync_dir: &Path) -> std::io::Result<()> {
+    if !server_sync_dir.is_dir() || !client_sync_dir.is_dir() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::NotADirectory,
             format!(
                 "{} or {} is not a directory",
-                f_dir.display(),
-                s_dir.display()
+                server_sync_dir.display(),
+                client_sync_dir.display()
             ),
         ));
     }
 
-    let f_files = get_dir_files_name(f_dir.as_path())?;
-    let s_files = get_dir_files_name(s_dir.as_path())?;
+    let f_files = get_dir_files_name(server_sync_dir)?;
+    let s_files = get_dir_files_name(client_sync_dir)?;
 
     let missing_files = f_files
         .symmetric_difference(&s_files)
@@ -64,8 +61,8 @@ pub fn verify_files(project_path: &Path) -> Result<(), std::io::Error> {
         .collect::<Vec<_>>();
 
     if !missing_files.is_empty() {
-        let server_log = f_dir.join("server.log");
-        let client_log = s_dir.join("client.log");
+        let server_log = server_sync_dir.join("server.log");
+        let client_log = client_sync_dir.join("client.log");
 
         output_log(&server_log).map(|log| LOGGER.info(&format!("Server log：\n{log}")));
         output_log(&client_log).map(|log| LOGGER.info(&format!("Client log：\n{log}")));
