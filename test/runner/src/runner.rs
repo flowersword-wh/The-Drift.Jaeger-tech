@@ -5,11 +5,11 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::case::TestCase;
-use crate::case::just_demo::JustDemo;
+use crate::case::default::DefaultCase;
 use crate::log::LOGGER;
 use crate::prepare::prepare;
 use crate::sandbox::SandboxManager;
-use crate::verification::{verify_files, verify_server_contains_client_files};
+use crate::verification::verify_server_contains_client_files;
 
 const PROCESS_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -93,11 +93,13 @@ pub fn runner(project_path: &Path) -> ExitCode {
     LOGGER.info("Initializing sandbox...");
     let mut manager = SandboxManager::new().expect("Failed to initialize sandbox manager");
     let sandbox = manager
-        .create_sandbox("just_demo")
-        .expect("Failed to create sandbox");
+        .open_or_create_sandbox("default")
+        .expect("Failed to open or create default sandbox");
 
-    let demo = JustDemo::new(sandbox);
-    demo.prepare().expect("Failed to prepare sandbox");
+    let default_case = DefaultCase::new(sandbox);
+    default_case
+        .prepare()
+        .expect("Failed to prepare default case");
 
     LOGGER.info("Preparing processes...");
 
