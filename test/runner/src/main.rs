@@ -4,6 +4,7 @@ use std::process::ExitCode;
 mod case;
 mod log;
 mod prepare;
+mod process;
 mod runner;
 mod sandbox;
 mod verification;

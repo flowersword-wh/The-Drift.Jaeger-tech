@@ -183,6 +183,30 @@ impl Sandbox {
         fs::create_dir_all(self.resolve_path(relative)?)
     }
 
+    /// Create an isolated run directory by copying the input directories.
+    pub fn create_run(&self, run_id: &str) -> io::Result<(PathBuf, PathBuf)> {
+        let run_root = Path::new("runs").join(run_id);
+        let server_run = run_root.join("server");
+        let client_run = run_root.join("client");
+
+        self.create_dir(&server_run)?;
+        self.create_dir(&client_run)?;
+        self.copy_contents(Path::new("server"), &server_run)?;
+        self.copy_contents(Path::new("client"), &client_run)?;
+
+        Ok((
+            self.resolve_path(&server_run)?,
+            self.resolve_path(&client_run)?,
+        ))
+    }
+
+    /// Copy a directory's contents without following links.
+    pub fn copy_contents(&self, source: &Path, destination: &Path) -> io::Result<()> {
+        let source = self.resolve_path(source)?;
+        let destination = self.resolve_path(destination)?;
+        copy_directory_contents(&source, &destination)
+    }
+
     /// Create or overwrite a file. Its parent directory must already exist.
     pub fn write_file(&self, relative: &Path, contents: impl AsRef<[u8]>) -> io::Result<()> {
         fs::write(self.resolve_path(relative)?, contents)
@@ -257,6 +281,31 @@ impl Sandbox {
         reject_links_in_tree(&target)?;
         fs::remove_dir_all(target)
     }
+}
+
+fn copy_directory_contents(source: &Path, destination: &Path) -> io::Result<()> {
+    reject_links_in_tree(source)?;
+    fs::create_dir_all(destination)?;
+
+    for entry in fs::read_dir(source)? {
+        let entry = entry?;
+        let metadata = fs::symlink_metadata(entry.path())?;
+        reject_link(&metadata)?;
+        let target = destination.join(entry.file_name());
+
+        if metadata.is_dir() {
+            copy_directory_contents(&entry.path(), &target)?;
+        } else if metadata.is_file() {
+            fs::copy(entry.path(), target)?;
+        } else {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "unsupported filesystem entry in sandbox",
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 // Check all descendants before recursive operations, not only the target itself.
