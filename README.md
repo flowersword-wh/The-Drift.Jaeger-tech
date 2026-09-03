@@ -99,10 +99,15 @@ cargo build --manifest-path test\runner\Cargo.toml
 测试日志位于：
 
 ```text
-logs/date-time.log
+logs/<case>/<run_id>/server.log
+logs/<case>/<run_id>/client.log
 ```
 
-测试 runner 默认在进程超过 10 秒未退出时终止进程。若测试失败，建议优先检查上述两个日志文件。
+runner 会依次执行 `default`、`just_demo`、`empty_file`、`multiple_files`、`binary_file`、`long_filename` 和 `directory_transfer` 测试。每次执行都会生成唯一的 `run_id`，用于隔离同步目录和日志；测试失败时，控制台会输出该 ID 和测试说明。`directory_transfer` 当前用于确认目录传输尚未支持，因此预期失败不会使整个测试流程失败。
+
+集成测试出现错误时，优先查看 [`test/runner/TEST_CASES.md`](test/runner/TEST_CASES.md)，确认对应测试的目的、输入数据、校验方式和预期结果，再根据控制台输出的 `run_id` 检查对应日志。
+
+测试 runner 默认在进程超过 10 秒未退出时终止进程。执行 `xmake clean` 会删除测试生成的 `logs` 和 `test/sandbox` 目录，不会删除源代码。
 
 ## 目录结构
 
@@ -123,6 +128,7 @@ logs/date-time.log
 ## 当前限制
 
 - 仅处理同步目录的直接子项，当前不会递归同步子目录中的文件。
+- Rust runner 的边界测试会分别覆盖空文件、多文件、二进制文件、大文件和长文件名；目录传输由独立的预期失败测试覆盖。
 - 服务端和客户端固定使用 TCP `8080` 端口。
 - 协议未提供文件校验、断点续传或加密能力。
 - 接收到的文件名来自客户端，生产环境使用前应补充路径校验和更严格的协议校验。
