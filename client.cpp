@@ -43,11 +43,12 @@ bool sendAll(SOCKET fd, const void *data, int len)
 	return true;
 }
 
-bool recvAll(SOCKET fd, char *data, int len)
+bool recvAll(SOCKET fd, void *data, int len)
 {
 	int received = 0;
+	char *bytes = (char *) (data);
 	while (received < len) {
-		int result = recv(fd, data + received, len - received, 0);
+		int result = recv(fd, bytes + received, len - received, 0);
 		if (result <= 0) {
 			return false;
 		}
@@ -181,6 +182,9 @@ int main(int argc, char *argv[])
 
 	for (const auto &entry : fs::directory_iterator(folderPath)) {
 		std::string currentFile = entry.path().filename().string();
+		if (currentFile == "client.exe") {
+			continue;
+		}
 
 		if (serverFiles.find(currentFile) == serverFiles.end()) {
 			// 判断指向对象是否是目录（文件夹），如果是,则创建同名文件夹
@@ -189,9 +193,8 @@ int main(int argc, char *argv[])
 			} else {
 				filelost.push_back(
 						{entry.path(), entry.file_size(), currentFile, false});
-						fileCount++;
+				fileCount++;
 			}
-			
 		}
 	}
 
@@ -200,63 +203,49 @@ int main(int argc, char *argv[])
 		throw std::runtime_error("fileCount send failed");
 	}
 
-	int count = 0;
-
 	for (const auto &entry : filelost) {
-		if (count >= fileCount)
-			break;
+		if (entry.is_folder) {
+			continue;
+		}
+		
+		logger.info("Sending file: " + entry.name);
 
-		// 判断
-		if (!entry.is_folder) {
-			logger.info("Sending file: " + filelost[count].name);
-			// 创建buffer缓冲区
-			char buffer[BUF_SIZE] = {0};
-			// 取得当前要传输的文件信息
-			auto filePath = filelost[count].path;
-			auto filesize = (uint64_t) fs::file_size(filePath);
-			std::uint32_t filenamelength =
-					(std::uint32_t) (filelost[count].name.size());
-			logger.info("File: " + std::string(filelost[count].name));
-			logger.info("File size: " + std::to_string(filesize) + " B");
+		char buffer[BUF_SIZE];
 
-			// 发送文件名长度
-			logger.info("Sending filename length...");
-			if (!sendAll(client_fd, &filenamelength, sizeof(filenamelength))) {
-				throw std::runtime_error("filenamelength send failed");
-			}
-			// 发送文件大小 // filesize 得到的是文件大小
-			// sizeof(filesize)表示这个文件大小数值 占用多少字节
-			logger.info("Sending file size...");
-			if (!sendAll(client_fd, &filesize, sizeof(filesize))) {
-				throw std::runtime_error("filesize send failed");
-			}
-			// 发送文件名
-			logger.info("Sending filename...");
-			if (!sendAll(client_fd, filelost[count].name.data(),
-									 (int) (filelost[count].name.size()))) {
-				throw std::runtime_error("filename send failed");
-			}
-			// 发送文件内容
-			logger.info("Sending file content...");
-			std::ifstream file(filePath, std::ios::binary);
-			if (!file) {
-				throw std::runtime_error("file open failed");
-			}
-			while (file.read(buffer, sizeof(buffer)) || file.gcount() > 0) {
-				std::streamsize count = file.gcount();
-				if (count > 0) {
-					if (!sendAll(client_fd, buffer, count)) {
-						throw std::runtime_error("file send failed");
-					};
+		auto filePath = entry.path;
+		auto filesize = static_cast<std::uint64_t>(fs::file_size(filePath));
+
+		std::uint32_t filenamelength = (std::uint32_t) (entry.name.size());
+
+		// 发送文件名长度
+		if (!sendAll(client_fd, &filenamelength, sizeof(filenamelength))) {
+			throw std::runtime_error("filenamelength send failed");
+		}
+
+		// 发送文件大小
+		if (!sendAll(client_fd, &filesize, sizeof(filesize))) {
+			throw std::runtime_error("filesize send failed");
+		}
+
+		// 发送文件名
+		if (!sendAll(client_fd, entry.name.data(), (int) (entry.name.size()))) {
+			throw std::runtime_error("filename send failed");
+		}
+
+		std::ifstream file(filePath, std::ios::binary);
+		if (!file) {
+			throw std::runtime_error("file open failed");
+		}
+
+		while (file.read(buffer, sizeof(buffer)) || file.gcount() > 0) {
+			std::streamsize count = file.gcount();
+			if (count > 0) {
+				if (!sendAll(client_fd, buffer, (int) (count))) {
+					throw std::runtime_error("file send failed");
 				}
 			}
-			file.close();
-			logger.info("File sent: " + std::to_string(filesize) + " B");
 		}
-
-		else {
-		}
-		count++;
+		logger.info("File sent: " + std::to_string(filesize) + " B");
 	}
 	logger.info("File synchronization completed.");
 	shutdown(client_fd, SD_BOTH);
