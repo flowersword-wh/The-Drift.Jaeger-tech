@@ -169,34 +169,13 @@ int main(int argc, char *argv[])
 
 	while (fileCount--) {
 
-		std::uint32_t filenamelength;
 		std::uint64_t filesize;
 
-		// 接收文件名长度
-		if (!recvAll(client_fd, (char *) (&filenamelength),
-								 sizeof(filenamelength))) {
-			throw std::runtime_error("filenamelength receive failed");
-		};
-		// 检查文件名长度是否合规
-		if (filenamelength == 0 || filenamelength > 260) {
-			throw std::runtime_error("invalid filename length");
-		}
-		logger.info("Received filename length: " + std::to_string(filenamelength));
 		// 接收文件大小
 		if (!recvAll(client_fd, (char *) (&filesize), sizeof(filesize))) {
 			throw std::runtime_error("filesize receive failed");
 		};
 		logger.info("Received file size: " + std::to_string(filesize));
-		// 接收文件名
-		// 创建一个长度为 filenamelength 的字符串，并用 '\0' 填充
-		// 先分配出足够的空间，让 recv() 把文件名写进去
-		std::string filename(filenamelength, '\0');
-
-		if (!recvAll(client_fd, filename.data(), filenamelength)) {
-			throw std::runtime_error("filename receive failed");
-		};
-
-		logger.info("Received filename: " + filename);
 
 		// 接收文件相对路径大小
 		std::uint32_t pathSize;
@@ -210,8 +189,9 @@ int main(int argc, char *argv[])
 		}
 
 		// 接收文件内容
-		std::string savepath = relativePath;
-		logger.info("Saving file to: " + savepath);
+		fs::path savepath = fs::path(folderpath) / fs::path(relativePath);
+		logger.info("Saving file to: " + savepath.string());
+		fs::create_directories(savepath.parent_path());
 		std::ofstream file(savepath, std::ios::binary | std::ios::trunc);
 		if (!file) {
 			throw std::runtime_error("file open failed");

@@ -66,7 +66,7 @@ int main(int argc, char *argv[])
 		logger.error("Usage: " + std::string(argv[0]) + " <sync-folder>");
 		return 1;
 	}
-	std::string folderPath = argv[1];
+	fs::path folderPath = argv[1];
 	// 校验目录是否存在、是否为文件夹
 	try {
 		// 检查是否存在
@@ -155,47 +155,42 @@ int main(int argc, char *argv[])
 		logger.error("Remaining bytes: " + std::to_string(remain) + " B");
 	}
 	logger.info("Server folder overview received.");
-	// 7. 已经接收了服务端传来的概览文件路径
-	//    此时读取要传输的文件夹 比对服务端缺失的文件 缺失就发送
+	// 7. 已经接收了服务端概览文件相对路径
+	//    此时读取客户端要同步的文件夹
+
 	// 把fileoverview放到set里
 	std::set<std::string> serverFiles;
-	std::string filename;
+	std::string filePath;
 	std::ifstream readstream("fileoverview.txt");
 	if (!readstream) {
 		throw std::runtime_error("file open failed");
 	}
-	while (std::getline(readstream, filename)) {
-		if (!filename.empty()) {
-			serverFiles.insert(filename);
+	while (std::getline(readstream, filePath)) {
+		if (!filePath.empty()) {
+			serverFiles.insert(filePath);
 		}
 	}
 	// 遍历查找 缺失就标记 记录缺失数
 	int fileCount = 0;
 	struct file {
-		fs::path path;
+		fs::path absolute_path;
+		fs::path relative_path;
 		size_t size;
 		std::string name;
-		bool is_folder;
 	};
 	std::vector<file> filelost{};
 	logger.info("Starting file synchronization...");
 
 	for (const auto &entry : fs::recursive_directory_iterator(folderPath)) {
-		std::string currentFile = entry.path().filename().string();
-		if (currentFile == "client.exe") {
-			continue;
-		}
-		logger.info("Client file: [" + currentFile + "]");
+		std::string currentPath = entry.path().string();
+		// 如果客户端同步文件夹选择包含client.exe的文件夹，则不能发送client.exe
 
-		if (serverFiles.find(currentFile) == serverFiles.end()) {
-			// 判断指向对象是否是目录（文件夹），如果是,则创建同名文件夹
-			if (entry.is_directory()) {
-				filelost.push_back({entry.path(), 0, currentFile, true});
-			} else {
-				filelost.push_back(
-						{entry.path(), entry.file_size(), currentFile, false});
-				fileCount++;
-			}
+		if (serverFiles.find(currentPath) == serverFiles.end() &&
+				entry.is_regular_file()) {
+			filelost.push_back({entry.path(),
+													entry.path().lexically_relative(folderPath),
+													entry.file_size(), entry.path().filename().string()});
+			fileCount++;
 		}
 	}
 
@@ -205,40 +200,28 @@ int main(int argc, char *argv[])
 	}
 
 	for (const auto &entry : filelost) {
-		if (entry.is_folder) {
-			continue;
-		}
 
 		logger.info("Sending file: " + entry.name);
 
 		char buffer[BUF_SIZE];
 
-		auto filePath = entry.path;
-		auto filesize = static_cast<std::uint64_t>(fs::file_size(filePath));
-
-		std::uint32_t filenamelength = (std::uint32_t) (entry.name.size());
-
-		// 发送文件名长度
-		if (!sendAll(client_fd, &filenamelength, sizeof(filenamelength))) {
-			throw std::runtime_error("filenamelength send failed");
-		}
+		auto filePath = entry.absolute_path;
+		auto filesize = entry.size;
 
 		// 发送文件大小
 		if (!sendAll(client_fd, &filesize, sizeof(filesize))) {
 			throw std::runtime_error("filesize send failed");
 		}
 
-		// 发送文件名
-		if (!sendAll(client_fd, entry.name.data(), (int) (entry.name.size()))) {
-			throw std::runtime_error("filename send failed");
-		}
 		// 发送文件相对路径大小
-		std::uint32_t pathSize;
+
+		std::string relativePath = entry.relative_path.string();
+		std::uint32_t pathSize = (std::uint32_t) (relativePath.size());
 		if (!sendAll(client_fd, &pathSize, sizeof(pathSize))) {
 			throw std::runtime_error("pathSize send failed");
 		}
 		// 发送文件相对路径
-		std::string relativePath = filePath.relative_path().string();
+
 		if (!sendAll(client_fd, relativePath.data(), pathSize)) {
 			throw std::runtime_error("relativePath send failed");
 		}
