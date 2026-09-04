@@ -15,13 +15,15 @@ impl<'a> DirectoryTransferCase<'a> {
 
 impl TestCase for DirectoryTransferCase<'_> {
     fn description(&self) -> &'static str {
-        "Place a file inside a client-side directory and confirm that directory transfer is currently rejected by the server containment verification. This is an expected failure until directory transfer support is implemented."
+        "Place a file inside a nested client-side directory and confirm that recursive directory transfer is currently rejected by the server containment verification. This is an expected failure until directory transfer support is implemented."
     }
 
     fn prepare(&self) -> std::io::Result<()> {
-        self.sandbox.create_dir(Path::new("client/nested"))?;
-        self.sandbox
-            .write_file(Path::new("client/nested/inside.txt"), b"directory test")?;
+        self.sandbox.create_dir(Path::new("client/nested/deep"))?;
+        self.sandbox.write_file(
+            Path::new("client/nested/deep/inside.txt"),
+            b"directory test",
+        )?;
         Ok(())
     }
 

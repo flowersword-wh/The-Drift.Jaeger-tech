@@ -6,7 +6,7 @@
 
 - 分别在服务端和客户端测试目录中启动对应的 exe。
 - 为两个进程设置互相隔离的工作目录。
-- `DefaultCase` 只创建或打开 server/client 目录，不生成测试文件，供开发者放入自己的测试数据。
+- `DefaultCase` 只创建或打开 server/client 目录，不生成测试文件，供开发者放入自己的测试数据；运行后使用递归对称差和目录 SHA-256 hash 校验两边结果。
 - `JustDemo` 测试单个普通文本文件，生成内容为 `hello world` 的 `demo.txt`。
 - `EmptyFileCase` 测试零字节文件的传输。
 - `MultipleFilesCase` 测试同一轮传输多个文件，以及带空格和标点的文件名。
@@ -72,7 +72,7 @@ Default 主要用于手动准备测试数据、复现同步问题和验证普通
 Default 的限制如下：
 
 - sandbox 内容会跨运行保留，前一次测试留下的文件可能影响下一次结果，需要开发者自行清理或替换。
-- 当前只校验直接子项的文件名，不比较文件内容，也不递归校验子目录。
+- 通用校验会递归检查 server 是否包含 client 的全部目录项；`DefaultCase` 额外要求两边目录项对称一致，并比较整个目录树的 SHA-256 hash。
 - 默认校验只要求 server 包含 client 的文件，server 中存在额外文件不会导致失败。
 - server 和 client 固定使用 TCP 端口 `8080`，不能安全地并行运行多个 default 测试。
 - client 的 stdin 设置为 `null`，需要交互式输入的程序暂不适用。
@@ -95,7 +95,7 @@ xmake run test_runner -- --case default --case binary_file --verbose
 
 除 Default 外，runner 会按顺序执行 `just_demo`、`empty_file`、`multiple_files`、`binary_file`、`long_filename` 和 `directory_transfer`。这些测试分别位于 `src/case/` 下的独立文件中，每个 case 负责准备自己的输入并执行自己的内容校验。
 
-`directory_transfer` 会在客户端目录中创建子目录和文件。由于当前 C++ 协议只处理同步目录的直接子项，该测试预期失败；runner 会将其记录为 expected error，但不会因此返回失败退出码。其他 case 的进程异常退出、超时或校验失败均属于实际错误。
+`directory_transfer` 会在客户端目录中创建多层子目录和文件。由于当前 C++ 协议不携带文件的相对路径，该测试预期失败；runner 会将其记录为 expected error，但不会因此返回失败退出码。其他 case 的进程异常退出、超时或校验失败均属于实际错误。
 
 ## 环境要求
 
