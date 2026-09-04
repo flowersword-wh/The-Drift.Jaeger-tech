@@ -76,7 +76,20 @@ Default 的限制如下：
 - 默认校验只要求 server 包含 client 的文件，server 中存在额外文件不会导致失败。
 - server 和 client 固定使用 TCP 端口 `8080`，不能安全地并行运行多个 default 测试。
 - client 的 stdin 设置为 `null`，需要交互式输入的程序暂不适用。
-- 当前 runner 尚未接入 Clap，因此还不能通过命令行选择其他测试案例。
+- 可通过 `--case` 选择测试案例，并可通过 `--verbose` 输出调试日志。
+
+命令行示例：
+
+```powershell
+# 运行全部测试案例（默认行为）
+xmake run test_runner
+
+# 只运行一个案例
+xmake run test_runner -- --case default
+
+# 运行多个案例并输出调试日志
+xmake run test_runner -- --case default --case binary_file --verbose
+```
 
 ## 其他测试案例
 
@@ -158,7 +171,8 @@ logs/<case>/<run_id>/client.log
 - client 的 stdin 当前设置为 `null`；如果程序要求交互式输入，需要调整 runner。
 - `verify_files()` 的对称差异校验已保留，但当前默认流程暂未启用。
 - default sandbox 中的测试数据由开发者自行准备，runner 不会清理。
-- 当前 runner 尚未真正解析命令行参数。
+- 未指定 `--case` 时运行全部测试案例；`--case` 可重复指定。
+- `--verbose` 开启 DEBUG 级别日志。
 
 ## 清理生成物
 

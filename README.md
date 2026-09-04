@@ -9,10 +9,11 @@
 - C++17 实现 TCP 服务端和客户端。
 - 服务端监听 `8080` 端口，客户端连接本机回环地址 `127.0.0.1:8080`。
 - 通过命令行参数指定两端的同步目录。
-- 使用 `fileoverview.txt` 记录目录中的直接子项名称。
+- 使用 `fileoverview.txt` 记录目录树中发现的文件名；当前协议尚未保留相对路径。
 - 支持传输普通文件及空文件。
 - 提供 `fileoverview` 工具，用于手动生成目录概览。
 - 提供 Rust 集成测试 runner，可自动构建、启动和验证服务端与客户端。
+- Rust runner 支持通过 `--case` 选择测试用例，并通过 `--verbose` 输出调试日志。
 
 ## 环境要求
 
@@ -81,6 +82,16 @@ xmake build test_runner
 xmake run test_runner
 ```
 
+默认会运行全部测试用例。也可以选择一个或多个用例：
+
+```powershell
+# 运行单个用例
+xmake run test_runner -- --case default
+
+# 运行多个用例并输出 DEBUG 日志
+xmake run test_runner -- --case default --case binary_file --verbose
+```
+
 Release 模式：
 
 ```powershell
@@ -103,7 +114,9 @@ logs/<case>/<run_id>/server.log
 logs/<case>/<run_id>/client.log
 ```
 
-runner 会依次执行 `default`、`just_demo`、`empty_file`、`multiple_files`、`binary_file`、`long_filename` 和 `directory_transfer` 测试。每次执行都会生成唯一的 `run_id`，用于隔离同步目录和日志；测试失败时，控制台会输出该 ID 和测试说明。`directory_transfer` 当前用于确认目录传输尚未支持，因此预期失败不会使整个测试流程失败。
+runner 默认依次执行 `default`、`just_demo`、`empty_file`、`multiple_files`、`binary_file`、`long_filename` 和 `directory_transfer` 测试。通过重复指定 `--case` 可以选择部分用例，执行顺序仍由 runner 统一控制。每次执行都会生成唯一的 `run_id`，用于隔离同步目录和日志；测试失败时，控制台会输出该 ID 和测试说明。`directory_transfer` 当前用于确认目录传输尚未支持，因此预期失败不会使整个测试流程失败。
+
+runner 在进程完成后会递归检查 server 运行目录是否包含 client 运行目录中的全部目录项，但不比较文件内容；因此嵌套目录中的文件缺失也会被报告。
 
 集成测试出现错误时，优先查看 [`test/runner/TEST_CASES.md`](test/runner/TEST_CASES.md)，确认对应测试的目的、输入数据、校验方式和预期结果，再根据控制台输出的 `run_id` 检查对应日志。
 
@@ -127,8 +140,9 @@ runner 会依次执行 `default`、`just_demo`、`empty_file`、`multiple_files`
 
 ## 当前限制
 
-- 仅处理同步目录的直接子项，当前不会递归同步子目录中的文件。
+- C++ 同步协议虽然会遍历子目录，但传输时只使用文件名而不携带相对路径，因此尚未实现可靠的目录树同步；同名文件也可能发生冲突。
 - Rust runner 的边界测试会分别覆盖空文件、多文件、二进制文件、大文件和长文件名；目录传输由独立的预期失败测试覆盖。
+- Rust runner 的通用校验会递归检查 server 是否包含 client 的目录项，但默认不比较文件内容。
 - 服务端和客户端固定使用 TCP `8080` 端口。
 - 协议未提供文件校验、断点续传或加密能力。
 - 接收到的文件名来自客户端，生产环境使用前应补充路径校验和更严格的协议校验。
