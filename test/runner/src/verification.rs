@@ -6,7 +6,7 @@ fn is_excluded_file(file_name: &str) -> bool {
     EXCLUED_FILES.iter().any(|&f| f == file_name)
 }
 
-fn get_dir_files_name(dir: &Path) -> Result<HashSet<String>, std::io::Error> {
+fn get_dir_entries(dir: &Path) -> Result<HashSet<std::path::PathBuf>, std::io::Error> {
     if !dir.is_dir() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::NotADirectory,
@@ -14,8 +14,16 @@ fn get_dir_files_name(dir: &Path) -> Result<HashSet<String>, std::io::Error> {
         ));
     }
 
-    let mut files = HashSet::new();
+    let mut entries = HashSet::new();
+    collect_dir_entries(dir, Path::new(""), &mut entries)?;
+    Ok(entries)
+}
 
+fn collect_dir_entries(
+    dir: &Path,
+    relative_dir: &Path,
+    entries: &mut HashSet<std::path::PathBuf>,
+) -> Result<(), std::io::Error> {
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
 
@@ -27,31 +35,45 @@ fn get_dir_files_name(dir: &Path) -> Result<HashSet<String>, std::io::Error> {
         })?;
 
         if !is_excluded_file(&file_name) {
-            files.insert(file_name);
+            let relative_path = relative_dir.join(&file_name);
+            entries.insert(relative_path.clone());
+
+            if entry.file_type()?.is_dir() {
+                collect_dir_entries(&entry.path(), &relative_path, entries)?;
+            }
         }
     }
 
-    Ok(files)
+    Ok(())
+}
+
+fn format_paths(paths: &[std::path::PathBuf]) -> String {
+    paths
+        .iter()
+        .map(|path| path.display().to_string())
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 pub fn verify_server_contains_client_files(
     server_sync_dir: &Path,
     client_sync_dir: &Path,
 ) -> std::io::Result<()> {
-    let server_files = get_dir_files_name(server_sync_dir)?;
-    let client_files = get_dir_files_name(client_sync_dir)?;
+    let server_files = get_dir_entries(server_sync_dir)?;
+    let client_files = get_dir_entries(client_sync_dir)?;
 
-    let missing_files = client_files
+    let mut missing_files = client_files
         .difference(&server_files)
         .cloned()
         .collect::<Vec<_>>();
+    missing_files.sort();
 
     if !missing_files.is_empty() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::NotFound,
             format!(
                 "Server is missing client files: {}",
-                missing_files.join(", ")
+                format_paths(&missing_files)
             ),
         ));
     }
@@ -71,18 +93,19 @@ pub fn verify_files(server_sync_dir: &Path, client_sync_dir: &Path) -> std::io::
         ));
     }
 
-    let f_files = get_dir_files_name(server_sync_dir)?;
-    let s_files = get_dir_files_name(client_sync_dir)?;
+    let f_files = get_dir_entries(server_sync_dir)?;
+    let s_files = get_dir_entries(client_sync_dir)?;
 
-    let missing_files = f_files
+    let mut missing_files = f_files
         .symmetric_difference(&s_files)
-        .map(String::as_str)
+        .cloned()
         .collect::<Vec<_>>();
+    missing_files.sort();
 
     if !missing_files.is_empty() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::NotFound,
-            format!("Missing files: {}", missing_files.join(", ")),
+            format!("Missing files: {}", format_paths(&missing_files)),
         ));
     }
 

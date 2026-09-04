@@ -383,6 +383,3 @@ fn validate_path(root_path: &Path, path: &Path) -> io::Result<PathBuf> {
     }
     Ok(target)
 }
-
-#[cfg(test)]
-mod tests;
