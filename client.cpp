@@ -232,7 +232,18 @@ int main(int argc, char *argv[])
 		if (!sendAll(client_fd, entry.name.data(), (int) (entry.name.size()))) {
 			throw std::runtime_error("filename send failed");
 		}
+		// 发送文件相对路径大小
+		std::uint32_t pathSize;
+		if (!sendAll(client_fd, &pathSize, sizeof(pathSize))) {
+			throw std::runtime_error("pathSize send failed");
+		}
+		// 发送文件相对路径
+		std::string relativePath = filePath.relative_path().string();
+		if (!sendAll(client_fd, relativePath.data(), pathSize)) {
+			throw std::runtime_error("relativePath send failed");
+		}
 
+		// 发送文件内容
 		std::ifstream file(filePath, std::ios::binary);
 		if (!file) {
 			throw std::runtime_error("file open failed");
@@ -246,6 +257,7 @@ int main(int argc, char *argv[])
 				}
 			}
 		}
+
 		logger.info("File sent: " + std::to_string(filesize) + " B");
 	}
 	logger.info("File synchronization completed.");
