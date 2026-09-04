@@ -198,15 +198,7 @@ int main(int argc, char *argv[])
 			}
 		}
 	}
-	///
 
-	logger.info("Server file count: " +
-            std::to_string(serverFiles.size()));
-
-for (const auto &name : serverFiles) {
-    logger.info("Server file: [" + name + "]");
-}
-////
 	// 发送缺失文件数给server
 	if (!sendAll(client_fd, &fileCount, sizeof(fileCount))) {
 		throw std::runtime_error("fileCount send failed");
@@ -216,7 +208,7 @@ for (const auto &name : serverFiles) {
 		if (entry.is_folder) {
 			continue;
 		}
-		
+
 		logger.info("Sending file: " + entry.name);
 
 		char buffer[BUF_SIZE];
