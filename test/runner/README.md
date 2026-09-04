@@ -59,6 +59,21 @@ test/
 
 `server_test` 和 `client_test` 是 C++ 可执行文件的部署目录。Default 的输入数据位于 `test/sandbox/default/server` 和 `test/sandbox/default/client`，每轮运行的隔离目录位于对应 sandbox 的 `runs/<run_id>/server` 和 `runs/<run_id>/client`。
 
+## 基础 sandbox 与实际同步目录
+
+`test/sandbox/<case>/server` 和 `test/sandbox/<case>/client` 是测试输入模板目录，不是 C++ 程序实际进行同步的目录。每次运行时，runner 会先在对应 case 下创建唯一的 `runs/<run_id>`，再将基础 sandbox 中的 `server` 和 `client` 内容分别复制到：
+
+```text
+test/sandbox/<case>/runs/<run_id>/server
+test/sandbox/<case>/runs/<run_id>/client
+```
+
+随后，runner 将这两个 `runs/<run_id>` 子目录作为命令行参数传给 `server.exe` 和 `client.exe`。因此，真正发生文件同步、产生同步结果以及执行校验的，是本轮的 `runs/<run_id>/server` 与 `runs/<run_id>/client`；基础 `server` 和 `client` 目录不会被 C++ 程序直接修改或同步。
+
+该流程适用于所有测例，包括 `default`、`just_demo`、`empty_file`、`multiple_files`、`binary_file`、`long_filename` 和 `directory_transfer`。普通测例会先在基础 sandbox 的 client 目录中生成 fixture，再复制到本轮 run 目录；`default` 则直接复制开发者预先放入基础 server/client 目录中的内容。
+
+其中，`default` 使用保留输入的方式打开基础 sandbox，运行结束后基础目录仍会保留；其他测例每次运行会重新创建对应的基础 sandbox。测试结束后如需查看本轮输入和输出，应根据控制台中的 `run_id` 检查 `test/sandbox/<case>/runs/<run_id>/`，而不是只查看基础 `server` 和 `client` 目录。
+
 `DefaultCase` 使用非破坏性方式打开 default sandbox：不存在时自动创建，已存在且为目录时保留全部内容；如果路径存在但不是目录，则返回错误。Default 运行结束后会对 server/client 运行目录执行递归对称差校验和完整目录树 SHA-256 hash 校验。需要清理内容的独立测试可以使用 `SandboxManager::create_sandbox()`。
 
 ## Default 的使用方式
