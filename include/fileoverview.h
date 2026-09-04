@@ -11,8 +11,7 @@
 #endif
 
 namespace fs = std::filesystem;
-int getFileOverview(const std::string &path);
 
-void readfolder(std::string & folderPath);
+void  recursive_directory_reader(std::string & folderPath);
 
 bool is_CorrectPath(std::string & path);

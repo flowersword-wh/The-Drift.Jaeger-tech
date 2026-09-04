@@ -1,4 +1,5 @@
 #include <exception>
+#include <filesystem>
 #define WIN32_LEAN_AND_MEAN
 
 #include "include/fileoverview.h"
@@ -67,10 +68,12 @@ int main(int argc, char *argv[])
 	}
 	std::string folderpath = argv[1];
 	// 校验目录是否存在、是否为文件夹
-	if(!is_CorrectPath(folderpath)){
+	if (!is_CorrectPath(folderpath)) {
 		logger.error("create overviewfile failed");
 		return 0;
 	};
+	// 递归遍历读取所有文件
+	recursive_directory_reader(folderpath);
 	// 得到概览文件大小
 	std::uint64_t overviewSize;
 	FILE *fp;
@@ -168,6 +171,9 @@ int main(int argc, char *argv[])
 		std::uint32_t filenamelength;
 		std::uint64_t filesize;
 
+		fs::path filelost = folderpath + "/filelost";
+		fs::create_directory(filelost);
+
 		// 接收文件名长度
 		if (!recvAll(client_fd, (char *) (&filenamelength),
 								 sizeof(filenamelength))) {
@@ -194,7 +200,7 @@ int main(int argc, char *argv[])
 
 		logger.info("Received filename: " + filename);
 		// 接收文件内容
-		fs::path savepath = fs::path(folderpath) / filename;
+		fs::path savepath = filelost / filename;
 		logger.info("Saving file to: " + savepath.string());
 		std::ofstream file(savepath, std::ios::binary | std::ios::trunc);
 		if (!file) {

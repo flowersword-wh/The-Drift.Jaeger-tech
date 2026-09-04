@@ -180,19 +180,19 @@ int main(int argc, char *argv[])
 	std::vector<file> filelost{};
 	logger.info("Starting file synchronization...");
 
-	for (const auto &entry : fs::directory_iterator(folderPath)) {
-		std::string currentFilePath = entry.path().string();
-		if (currentFilePath == "client.exe") {
+	for (const auto &entry : fs::recursive_directory_iterator(folderPath)) {
+		std::string currentFile = entry.path().filename().string();
+		if (currentFile == "client.exe") {
 			continue;
 		}
 
-		if (serverFiles.find(currentFilePath) == serverFiles.end()) {
+		if (serverFiles.find(currentFile) == serverFiles.end()) {
 			// 判断指向对象是否是目录（文件夹），如果是,则创建同名文件夹
 			if (entry.is_directory()) {
-				filelost.push_back({entry.path(), 0, currentFilePath, true});
+				filelost.push_back({entry.path(), 0, currentFile, true});
 			} else {
 				filelost.push_back(
-						{entry.path(), entry.file_size(), currentFilePath, false});
+						{entry.path(), entry.file_size(), currentFile, false});
 				fileCount++;
 			}
 		}
@@ -205,7 +205,7 @@ int main(int argc, char *argv[])
 
 	for (const auto &entry : filelost) {
 		if (entry.is_folder) {
-			
+			continue;
 		}
 		
 		logger.info("Sending file: " + entry.name);

@@ -19,19 +19,21 @@ bool is_CorrectPath(std::string &path)
 		return true;
 }
 
-void readfolder(std::string &folderPath)
+void recursive_directory_reader(std::string &folderPath)
 {
 	std::ofstream writeFolderFile("overviewfile.txt");
 	if (!writeFolderFile) {
 		std::cerr << "open file failed" << std::endl;
 	}
-	for (const auto &entry : fs::directory_iterator(folderPath)) {
-		if (!entry.is_directory()) {
-			writeFolderFile << entry.path().string() << std::endl;
+	for (const auto &entry : fs::recursive_directory_iterator(folderPath)) {
+		if (entry.is_regular_file()) {
+			writeFolderFile << entry.path().filename().string() << std::endl;
 			if (!writeFolderFile) {
 				std::cerr << "write file failed" << std::endl;
 			}
-		} else
-			readfolder((std::string &) (entry.path()));
+		} else if(entry.is_directory()){
+			//如果是目录先跳过，暂时只处理文件
+			continue;
+		}
 	}
 }
