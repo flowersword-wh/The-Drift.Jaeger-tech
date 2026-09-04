@@ -1,4 +1,7 @@
-use std::sync::LazyLock;
+use std::sync::{
+    LazyLock,
+    atomic::{AtomicBool, Ordering},
+};
 use std::time::Instant;
 
 pub(crate) const COLOR_TS: &str = "\x1b[90m";
@@ -12,15 +15,24 @@ pub static LOGGER: LazyLock<Log> = LazyLock::new(Log::new);
 
 pub struct Log {
     start_time: Instant,
+    verbose: AtomicBool,
 }
 impl Log {
     fn new() -> Self {
         Self {
             start_time: Instant::now(),
+            verbose: AtomicBool::new(false),
         }
     }
 
+    pub(crate) fn set_verbose(&self, verbose: bool) {
+        self.verbose.store(verbose, Ordering::Relaxed);
+    }
+
     pub(crate) fn write(&self, color: &str, level: &str, file: &str, content: &str) {
+        if level == "DEBUG" && !self.verbose.load(Ordering::Relaxed) {
+            return;
+        }
         let elapsed_ms = self.start_time.elapsed().as_secs_f64() * 1000.0;
         let file_name = file.rsplit(['/', '\\']).next().unwrap_or(file);
         let module = file_name.strip_suffix(".rs").unwrap_or(file_name);

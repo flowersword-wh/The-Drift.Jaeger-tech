@@ -4,6 +4,8 @@ use std::process::{Child, ExitCode, ExitStatus};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use clap::ValueEnum;
+
 use crate::case::TestCase;
 use crate::case::binary_file::BinaryFileCase;
 use crate::case::default::DefaultCase;
@@ -16,23 +18,41 @@ use crate::prepare::prepare;
 use crate::process::terminate_child_until;
 use crate::sandbox::SandboxManager;
 use crate::verification::verify_server_contains_client_files;
-use crate::{log_error, log_info};
+use crate::{log_debug, log_error, log_info};
 
 const PROCESS_TIMEOUT: Duration = Duration::from_secs(10);
 const CLEANUP_TIMEOUT: Duration = Duration::from_secs(2);
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 pub enum CaseKind {
     Default,
+    #[value(name = "just_demo")]
     JustDemo,
+    #[value(name = "empty_file")]
     EmptyFile,
+    #[value(name = "multiple_files")]
     MultipleFiles,
+    #[value(name = "binary_file")]
     BinaryFile,
+    #[value(name = "long_filename")]
     LongFilename,
+    #[value(name = "directory_transfer")]
     DirectoryTransfer,
 }
 
 impl CaseKind {
+    pub fn all() -> [Self; 7] {
+        [
+            Self::Default,
+            Self::JustDemo,
+            Self::EmptyFile,
+            Self::MultipleFiles,
+            Self::BinaryFile,
+            Self::LongFilename,
+            Self::DirectoryTransfer,
+        ]
+    }
+
     pub fn name(self) -> &'static str {
         match self {
             Self::DirectoryTransfer => "directory_transfer",
@@ -143,6 +163,13 @@ fn run_one(project_path: &Path, manager: &mut SandboxManager, kind: CaseKind) ->
     log_info!(&format!("Run ID: {run_id}"));
     let (server_sync_dir, client_sync_dir) = sandbox.create_run(&run_id)?;
     let log_dir = project_path.join("logs").join(kind.name()).join(&run_id);
+    log_debug!(&format!(
+        "Case {}: server={}, client={}, logs={}",
+        kind.name(),
+        server_sync_dir.display(),
+        client_sync_dir.display(),
+        log_dir.display()
+    ));
     let process_deadline = Instant::now() + PROCESS_TIMEOUT;
     let cleanup_deadline = Instant::now() + CLEANUP_TIMEOUT;
     let processes = prepare(
@@ -171,6 +198,7 @@ fn run_one(project_path: &Path, manager: &mut SandboxManager, kind: CaseKind) ->
             return Err(error);
         }
     };
+    log_debug!(&format!("Client status in run {run_id}: {client_status:?}"));
     if !client_status.success() {
         report_case_description(description);
         log_error!(&format!(
@@ -184,6 +212,7 @@ fn run_one(project_path: &Path, manager: &mut SandboxManager, kind: CaseKind) ->
     }
 
     let server_status = wait_with_timeout(&mut server, process_deadline)?;
+    log_debug!(&format!("Server status in run {run_id}: {server_status:?}"));
     if !server_status.success() {
         report_case_description(description);
         log_error!(&format!(
@@ -219,7 +248,7 @@ fn run_one(project_path: &Path, manager: &mut SandboxManager, kind: CaseKind) ->
     Ok(true)
 }
 
-pub fn runner(project_path: &Path) -> ExitCode {
+pub fn runner(project_path: &Path, requested_cases: &[CaseKind]) -> ExitCode {
     let mut manager = match SandboxManager::new() {
         Ok(manager) => manager,
         Err(error) => {
@@ -228,19 +257,27 @@ pub fn runner(project_path: &Path) -> ExitCode {
         }
     };
 
-    let cases = [
-        CaseKind::Default,
-        CaseKind::JustDemo,
-        CaseKind::EmptyFile,
-        CaseKind::MultipleFiles,
-        CaseKind::BinaryFile,
-        CaseKind::LongFilename,
-        CaseKind::DirectoryTransfer,
-    ];
+    let all_cases = CaseKind::all();
+    let cases: Vec<_> = if requested_cases.is_empty() {
+        all_cases.into_iter().collect()
+    } else {
+        all_cases
+            .into_iter()
+            .filter(|kind| requested_cases.contains(kind))
+            .collect()
+    };
+    log_debug!(&format!(
+        "Selected cases: {}",
+        cases
+            .iter()
+            .map(|kind| kind.name())
+            .collect::<Vec<_>>()
+            .join(", ")
+    ));
     let mut failed = 0;
     let mut expected_errors = 0;
 
-    for kind in cases {
+    for kind in cases.iter().copied() {
         log_info!(&format!("Starting case: {}", kind.name()));
 
         match run_one(project_path, &mut manager, kind) {
