@@ -74,6 +74,8 @@ int main(int argc, char *argv[])
 	};
 	// 递归遍历读取所有文件
 	recursive_directory_reader(folderpath);
+
+	
 	// 得到概览文件大小
 	std::uint64_t overviewSize;
 	FILE *fp;

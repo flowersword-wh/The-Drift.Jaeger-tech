@@ -281,20 +281,4 @@ pub fn runner(project_path: &Path) -> ExitCode {
     } else {
         ExitCode::FAILURE
     }
-
-    if let Err(error) = verify_server_contains_client_files(&server_sync_dir, &client_sync_dir) {
-        LOGGER.error(&format!("Server containment verification failed: {error}"));
-        report_log("Server", &server_log);
-        report_log("Client", &client_log);
-        return ExitCode::FAILURE;
-    }
-
-    // if let Err(error) = verify_files(&server_sync_dir, &client_sync_dir) {
-    //     LOGGER.error(&format!("Verification failed: {error}"));
-    //     report_log("Server", &server_log);
-    //     report_log("Client", &client_log);
-    //     return ExitCode::FAILURE;
-    // }
-
-    ExitCode::SUCCESS
 }

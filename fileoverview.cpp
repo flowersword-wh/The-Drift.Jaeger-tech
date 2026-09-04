@@ -21,7 +21,7 @@ bool is_CorrectPath(std::string &path)
 
 void recursive_directory_reader(std::string &folderPath)
 {
-	std::ofstream writeFolderFile("overviewfile.txt");
+	std::ofstream writeFolderFile("fileoverview.txt");
 	if (!writeFolderFile) {
 		std::cerr << "open file failed" << std::endl;
 	}

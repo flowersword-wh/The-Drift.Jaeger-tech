@@ -185,6 +185,7 @@ int main(int argc, char *argv[])
 		if (currentFile == "client.exe") {
 			continue;
 		}
+		logger.info("Client file: [" + currentFile + "]");
 
 		if (serverFiles.find(currentFile) == serverFiles.end()) {
 			// 判断指向对象是否是目录（文件夹），如果是,则创建同名文件夹
@@ -197,7 +198,15 @@ int main(int argc, char *argv[])
 			}
 		}
 	}
+	///
 
+	logger.info("Server file count: " +
+            std::to_string(serverFiles.size()));
+
+for (const auto &name : serverFiles) {
+    logger.info("Server file: [" + name + "]");
+}
+////
 	// 发送缺失文件数给server
 	if (!sendAll(client_fd, &fileCount, sizeof(fileCount))) {
 		throw std::runtime_error("fileCount send failed");
