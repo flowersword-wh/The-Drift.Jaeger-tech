@@ -59,13 +59,13 @@ test/
 
 `server_test` 和 `client_test` 是 C++ 可执行文件的部署目录。Default 的输入数据位于 `test/sandbox/default/server` 和 `test/sandbox/default/client`，每轮运行的隔离目录位于对应 sandbox 的 `runs/<run_id>/server` 和 `runs/<run_id>/client`。
 
-`DefaultCase` 使用非破坏性方式打开 default sandbox：不存在时自动创建，已存在且为目录时保留全部内容；如果路径存在但不是目录，则返回错误。需要清理内容的独立测试可以使用 `SandboxManager::create_sandbox()`。
+`DefaultCase` 使用非破坏性方式打开 default sandbox：不存在时自动创建，已存在且为目录时保留全部内容；如果路径存在但不是目录，则返回错误。Default 运行结束后会对 server/client 运行目录执行递归对称差校验和完整目录树 SHA-256 hash 校验。需要清理内容的独立测试可以使用 `SandboxManager::create_sandbox()`。
 
 ## Default 的使用方式
 
 Default 是最常用的测试案例，适合开发者直接准备输入文件并运行完整的 C++ server/client 流程。测试前，将服务端和客户端的初始文件分别放入 `test/sandbox/default/server` 和 `test/sandbox/default/client`，然后运行 `xmake run test_runner`。
 
-runner 会自动创建缺失的目录，不会删除或覆盖 default sandbox 中已有的文件。server 和 client 使用不同的同步目录，并通过命令行参数接收目录路径；测试结束后，服务端目录中应至少包含客户端目录中的全部文件。
+runner 会自动创建缺失的目录，不会删除或覆盖 default sandbox 中已有的文件。server 和 client 使用不同的同步目录，并通过命令行参数接收目录路径；测试结束后，server 和 client 运行目录必须具有完全一致的目录项和文件内容。
 
 Default 主要用于手动准备测试数据、复现同步问题和验证普通 C++ 程序行为。开发者可以在两次运行之间修改 sandbox 内容，不需要修改 Rust 测试代码，也不需要重新生成 fixture。
 
@@ -73,7 +73,7 @@ Default 的限制如下：
 
 - sandbox 内容会跨运行保留，前一次测试留下的文件可能影响下一次结果，需要开发者自行清理或替换。
 - 通用校验会递归检查 server 是否包含 client 的全部目录项；`DefaultCase` 额外要求两边目录项对称一致，并比较整个目录树的 SHA-256 hash。
-- 默认校验只要求 server 包含 client 的文件，server 中存在额外文件不会导致失败。
+- Default 的对称差校验要求 server 和 client 的目录项完全一致，server 中存在额外文件会导致失败。
 - server 和 client 固定使用 TCP 端口 `8080`，不能安全地并行运行多个 default 测试。
 - client 的 stdin 设置为 `null`，需要交互式输入的程序暂不适用。
 - 可通过 `--case` 选择测试案例，并可通过 `--verbose` 输出调试日志。
@@ -154,13 +154,14 @@ logs/<case>/<run_id>/client.log
 
 ## 执行结果
 
-当两个进程都在统一截止时间前以成功状态退出，且 server 包含 client 的全部文件时， runner 返回退出码 `0`。出现以下任一情况时返回失败：
+当两个进程都在统一截止时间前以成功状态退出，通用递归校验通过，且当前测试案例的专属校验通过时，runner 返回退出码 `0`。Default 还要求目录项对称一致并且两边目录树的 SHA-256 hash 相同。出现以下任一情况时返回失败：
 
 - 无法创建测试数据或日志文件。
 - 无法启动服务端或客户端。
 - 任一进程返回非零退出码。
 - 任一进程超过统一的 10 秒截止时间仍未退出。
 - server 缺少 client 中的文件。
+- 测试案例专属校验失败，例如 Default 的目录对称差或 hash 校验失败。
 
 测试失败后先根据控制台中的 `run_id` 定位 `logs/<case>/<run_id>/`，再检查其中的 server/client 日志和对应的 `test/sandbox/<case>/runs/<run_id>/`。如果双方都显示连接成功但最终超时，通常意味着应用层协议的发送顺序、长度字段或消息边界不一致，而不是 TCP 连接本身失败。
 
@@ -169,7 +170,7 @@ logs/<case>/<run_id>/client.log
 
 - 服务端和客户端仍固定使用端口 `8080`，因此不能安全地并行运行多个测例。
 - client 的 stdin 当前设置为 `null`；如果程序要求交互式输入，需要调整 runner。
-- `verify_files()` 的对称差异校验已保留，但当前默认流程暂未启用。
+- `verify_files()` 的递归对称差异校验已接入 Default 流程。
 - default sandbox 中的测试数据由开发者自行准备，runner 不会清理。
 - 未指定 `--case` 时运行全部测试案例；`--case` 可重复指定。
 - `--verbose` 开启 DEBUG 级别日志。

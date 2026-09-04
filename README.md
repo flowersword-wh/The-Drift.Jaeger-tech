@@ -116,7 +116,7 @@ logs/<case>/<run_id>/client.log
 
 runner 默认依次执行 `default`、`just_demo`、`empty_file`、`multiple_files`、`binary_file`、`long_filename` 和 `directory_transfer` 测试。通过重复指定 `--case` 可以选择部分用例，执行顺序仍由 runner 统一控制。每次执行都会生成唯一的 `run_id`，用于隔离同步目录和日志；测试失败时，控制台会输出该 ID 和测试说明。`directory_transfer` 当前用于确认目录传输尚未支持，因此预期失败不会使整个测试流程失败。
 
-runner 在进程完成后会递归检查 server 运行目录是否包含 client 运行目录中的全部目录项，但不比较文件内容；因此嵌套目录中的文件缺失也会被报告。
+runner 在进程完成后会递归检查 server 运行目录是否包含 client 运行目录中的全部目录项，但通用校验不比较文件内容。`default` 还会执行目录项对称差校验和完整目录树 SHA-256 hash 校验；因此 Default 要求两边目录结构和文件内容完全一致。
 
 集成测试出现错误时，优先查看 [`test/runner/TEST_CASES.md`](test/runner/TEST_CASES.md)，确认对应测试的目的、输入数据、校验方式和预期结果，再根据控制台输出的 `run_id` 检查对应日志。
 
@@ -143,6 +143,7 @@ runner 在进程完成后会递归检查 server 运行目录是否包含 client 
 - C++ 同步协议虽然会遍历子目录，但传输时只使用文件名而不携带相对路径，因此尚未实现可靠的目录树同步；同名文件也可能发生冲突。
 - Rust runner 的边界测试会分别覆盖空文件、多文件、二进制文件、大文件和长文件名；目录传输由独立的预期失败测试覆盖。
 - Rust runner 的通用校验会递归检查 server 是否包含 client 的目录项，但默认不比较文件内容。
+- `default` 会额外使用递归对称差和目录 SHA-256 hash 校验，因此 server 不能包含 client 之外的额外目录项或文件。
 - 服务端和客户端固定使用 TCP `8080` 端口。
 - 协议未提供文件校验、断点续传或加密能力。
 - 接收到的文件名来自客户端，生产环境使用前应补充路径校验和更严格的协议校验。
