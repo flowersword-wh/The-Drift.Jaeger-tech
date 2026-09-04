@@ -1,6 +1,6 @@
 set_project("The-Drift.Jaeger-tech")
 set_version("0.0.1")
--- 设置最小版本为：2.1.0，低于此版本的xmake编译此工程将会提示版本错误信息
+-- 设置最小版本为：3.1.1，低于此版本的xmake编译此工程将会提示版本错误信息
 set_xmakever("3.1.1")
 add_rules("mode.debug", "mode.release")
 
@@ -29,15 +29,6 @@ local function cargo_build_runner(path_api, os_api)
   os_api.vrunv("cargo", args)
 end
 
-local function run_rust_runner(path_api, os_api)
-  local profile = is_mode("release") and "release" or "debug"
-  local executable = path_api.join(
-    os_api.projectdir(), "test", "runner", "target", profile, "runner.exe"
-  )
-
-  os_api.execv(executable, {})
-end
-
 target("server")
   set_kind("binary")
   add_files("server.cpp", "fileoverview.cpp")
@@ -62,9 +53,7 @@ target("test_runner")
       cargo_build_runner(path, os)
   end)
 
-  on_run(function(target)
-      run_rust_runner(path, os)
-  end)
+  on_run("lua/test_runner_run")
 
   after_clean(function(target)
       local project_dir = os.projectdir()
