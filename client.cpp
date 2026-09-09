@@ -115,75 +115,49 @@ int main(int argc, char *argv[])
 	judge(connect(client_fd, (sockaddr *) &sockaddr_in_t, len), "connect");
 	logger.info("Connection established.");
 
-	// 5. 请求要同步的文件夹内容
-	// std::string ask_msg = "请发送要同步的文件夹现有内容";
-	// sendAll(client_fd, ask_msg.data() ,(int)(ask_msg.size()));
-
-	// 6. 读取服务端发来的文件夹内容
-	std::uint64_t overviewSize;
-	std::uint64_t overview;
-
-	// 接收概览文件大小
-	logger.info("Receiving server folder overview...");
-
-	if (!recvAll(client_fd, (char *) &overviewSize, sizeof(overviewSize))) {
-		throw std::runtime_error("OverviewFile size receive failed");
-	}
-	// 接收概览文件
-	std::ofstream overviewfile("fileoverview.txt",
-														 std::ios::binary | std::ios::trunc);
-	if (!overviewfile) {
-		throw std::runtime_error("file open failed");
-	}
-
-	char overviewBuffer[256];
-	std::uint64_t remain = overviewSize;
-	while (remain > 0) {
-		int min = (int) (std::min<std::uint64_t>(remain, sizeof(overviewBuffer)));
-		if (!recvAll(client_fd, overviewBuffer, min)) {
-			throw std::runtime_error("overviewfile receive failed");
-		}
-		overviewfile.write(overviewBuffer, min);
-		remain -= min;
-	}
-	overviewfile.close();
-	logger.info("Expected bytes to write: " + std::to_string(overviewSize) +
-							" B");
-	logger.info("Bytes written: " + std::to_string(overviewSize - remain) + " B");
-	if (remain != 0) {
-		logger.error("Failed to receive complete file");
-		logger.error("Remaining bytes: " + std::to_string(remain) + " B");
-	}
-	logger.info("Server folder overview received.");
-	// 7. 已经接收了服务端概览文件相对路径
-	//    此时读取客户端要同步的文件夹
-
-	// 把fileoverview放到set里
+	// 先创建用于存储服务端文件相对路径的存储逻辑
 	std::set<std::string> serverFiles;
-	std::string filePath;
-	std::ifstream readstream("fileoverview.txt");
-	if (!readstream) {
-		throw std::runtime_error("file open failed");
-	}
-	while (std::getline(readstream, filePath)) {
-		if (!filePath.empty()) {
-			serverFiles.insert(filePath);
-		}
-	}
-	// 遍历查找 缺失就标记 记录缺失数
-	int fileCount = 0;
 	struct file {
 		fs::path absolute_path;
 		fs::path relative_path;
 		size_t size;
 		std::string name;
 	};
-	std::vector<file> filelost{};
-	logger.info("Starting file synchronization...");
 
+	std::vector<file> filelost{};
+
+	// 接收服务端要同步文件夹里的文件数量
+	int serverfileCount;
+	if (!recvAll(client_fd, &serverfileCount, sizeof(serverfileCount))) {
+		throw std::runtime_error("receive serverfile count failed");
+	}
+
+	// 循环接收文件相对路径大小 和 相对路径
+	for (int i = 0; i < serverfileCount; ++i) {
+		std::uint32_t pathSize = 0;
+
+		if (!recvAll(client_fd, &pathSize, sizeof(pathSize))) {
+			throw std::runtime_error("receive filepath size failed");
+		}
+
+		std::string relativePath(pathSize, '\0');
+
+		if (!recvAll(client_fd, relativePath.data(), (int) (pathSize))) {
+			throw std::runtime_error("receive filepath failed");
+		}
+
+		serverFiles.insert(relativePath);
+	}
+
+	// 遍历查找 缺失就标记 记录缺失数
+	logger.info("Starting file synchronization...");
+	std::uint32_t fileCount = 0;
 	for (const auto &entry : fs::recursive_directory_iterator(folderPath)) {
-		std::string currentPath = entry.path().string();
+		std::string currentPath =
+				entry.path().lexically_relative(folderPath).string();
 		// 如果客户端同步文件夹选择包含client.exe的文件夹，则不能发送client.exe
+		if (entry.path().filename() == "client.exe")
+			continue;
 
 		if (serverFiles.find(currentPath) == serverFiles.end() &&
 				entry.is_regular_file()) {
