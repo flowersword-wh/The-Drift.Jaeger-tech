@@ -12,6 +12,6 @@
 
 namespace fs = std::filesystem;
 
-void  recursive_directory_reader(std::string & folderPath);
+bool is_CorrectPath(std::string &path);
 
-bool is_CorrectPath(std::string & path);
+int ServerFiles_Count(std::string &folderPath);

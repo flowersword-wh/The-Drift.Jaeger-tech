@@ -58,7 +58,6 @@ bool recvAll(SOCKET fd, void *data, int len)
 }
 int main(int argc, char *argv[])
 {
-
 	Logger logger;
 	// 命令行输入要同步的目录
 	if (argc != 2) {
@@ -72,20 +71,6 @@ int main(int argc, char *argv[])
 		logger.error("create overviewfile failed");
 		return 0;
 	};
-	// 递归遍历读取所有文件
-	recursive_directory_reader(folderpath);
-
-	// 得到概览文件大小
-	std::uint64_t overviewSize;
-	FILE *fp;
-	fp = fopen("fileoverview.txt", "rb");
-	if (!fp) {
-		logger.error("file open failed");
-		return -1;
-	}
-	std::fseek(fp, 0, SEEK_END);
-	overviewSize = ftell(fp);
-	fclose(fp);
 
 	// 启动程序 初始化Winsock
 	logger.info("Server starting...");
@@ -136,27 +121,29 @@ int main(int argc, char *argv[])
 	}
 	logger.info("Connection established.");
 
-	// 发送概览文件
-	logger.info("Sending server folder overview...");
-	// 发送概览文件大小
-	if (!sendAll(client_fd, &overviewSize, sizeof(overviewSize))) {
-		throw std::runtime_error("overviewSize send failed");
+	// 取得要同步文件夹中的文件数量
+	int sendfileCount = ServerFiles_Count(folderpath);
+
+	// 把文件数量发送给客户端
+	if (!sendAll(client_fd, &sendfileCount, sizeof(sendfileCount))) {
+		throw std::runtime_error("send sendfileCount failed");
 	}
-	// 发送概览文件内容
-	char buffer[256];
-	std::ifstream fileview("fileoverview.txt", std::ios::binary);
-	if (!fileview) {
-		throw std::runtime_error("file open failed");
-	}
-	while (fileview.read(buffer, sizeof(buffer)) || fileview.gcount() > 0) {
-		std::streamsize count = fileview.gcount();
-		if (count > 0) {
-			if (!sendAll(client_fd, buffer, count)) {
-				throw std::runtime_error("overviewfile send failed");
-			};
+
+	// 发送文件路径大小 和 文件路径
+	for (const auto &entry : fs::recursive_directory_iterator(folderpath)) {
+		if (entry.is_regular_file()) {
+			std::string relativePath =
+					entry.path().lexically_relative(folderpath).string();
+			uint32_t pathSize = (uint32_t) (relativePath.size());
+
+			if (!sendAll(client_fd, &pathSize, sizeof(pathSize))) {
+				throw std::runtime_error("send serverfile pathsize failed");
+			}
+			if (!sendAll(client_fd, relativePath.data(), pathSize)) {
+				throw std::runtime_error("send serverfile relativepath failed");
+			}
 		}
 	}
-	logger.info("Server folder overview sent.");
 
 	// 接收客户端发送的缺失文件数
 	std::uint32_t fileCount;
