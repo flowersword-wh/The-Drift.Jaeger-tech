@@ -122,7 +122,7 @@ int main(int argc, char *argv[])
 	logger.info("Connection established.");
 
 	// 取得要同步文件夹中的文件数量
-	int sendfileCount = ServerFiles_Count(folderpath);
+	uint32_t sendfileCount = ServerFiles_Count(folderpath);
 
 	// 把文件数量发送给客户端
 	if (!sendAll(client_fd, &sendfileCount, sizeof(sendfileCount))) {

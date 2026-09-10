@@ -127,7 +127,7 @@ int main(int argc, char *argv[])
 	std::vector<file> filelost{};
 
 	// 接收服务端要同步文件夹里的文件数量
-	int serverfileCount;
+	uint32_t serverfileCount;
 	if (!recvAll(client_fd, &serverfileCount, sizeof(serverfileCount))) {
 		throw std::runtime_error("receive serverfile count failed");
 	}
