@@ -110,7 +110,7 @@ xmake run test_runner -- --case default --case binary_file --verbose
 
 除 Default 外，runner 会按顺序执行 `just_demo`、`empty_file`、`multiple_files`、`binary_file`、`long_filename` 和 `directory_transfer`。这些测试分别位于 `src/case/` 下的独立文件中，每个 case 负责准备自己的输入并执行自己的内容校验。
 
-`directory_transfer` 会在客户端目录中创建多层子目录和文件。由于当前 C++ 协议不携带文件的相对路径，该测试预期失败；runner 会将其记录为 expected error，但不会因此返回失败退出码。其他 case 的进程异常退出、超时或校验失败均属于实际错误。
+`directory_transfer` 会在客户端目录中创建多层子目录和文件，并校验服务端是否按相对路径重建目录结构且完整保留文件内容。与其他 case 一样，它的进程异常退出、超时或校验失败均属于实际错误。
 
 ## 环境要求
 
