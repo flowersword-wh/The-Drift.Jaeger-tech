@@ -8,6 +8,7 @@ use clap::ValueEnum;
 
 use crate::case::TestCase;
 use crate::case::binary_file::BinaryFileCase;
+use crate::case::comprehensive::ComprehensiveCase;
 use crate::case::default::DefaultCase;
 use crate::case::directory_transfer::DirectoryTransferCase;
 use crate::case::empty_file::EmptyFileCase;
@@ -38,10 +39,11 @@ pub enum CaseKind {
     LongFilename,
     #[value(name = "directory_transfer")]
     DirectoryTransfer,
+    Comprehensive,
 }
 
 impl CaseKind {
-    pub fn all() -> [Self; 7] {
+    pub fn all() -> [Self; 8] {
         [
             Self::Default,
             Self::JustDemo,
@@ -50,6 +52,7 @@ impl CaseKind {
             Self::BinaryFile,
             Self::LongFilename,
             Self::DirectoryTransfer,
+            Self::Comprehensive,
         ]
     }
 
@@ -62,6 +65,7 @@ impl CaseKind {
             Self::MultipleFiles => "multiple_files",
             Self::BinaryFile => "binary_file",
             Self::LongFilename => "long_filename",
+            Self::Comprehensive => "comprehensive",
         }
     }
 
@@ -80,6 +84,7 @@ impl CaseKind {
             Self::BinaryFile => Box::new(BinaryFileCase::new(sandbox)),
             Self::LongFilename => Box::new(LongFilenameCase::new(sandbox)),
             Self::DirectoryTransfer => Box::new(DirectoryTransferCase::new(sandbox)),
+            Self::Comprehensive => Box::new(ComprehensiveCase::new(sandbox)),
         }
     }
 }
@@ -153,6 +158,7 @@ fn run_one(project_path: &Path, manager: &mut SandboxManager, kind: CaseKind) ->
         CaseKind::BinaryFile => manager.create_sandbox(kind.name())?,
         CaseKind::LongFilename => manager.create_sandbox(kind.name())?,
         CaseKind::DirectoryTransfer => manager.create_sandbox(kind.name())?,
+        CaseKind::Comprehensive => manager.create_sandbox(kind.name())?,
     };
 
     let case = kind.build(sandbox);

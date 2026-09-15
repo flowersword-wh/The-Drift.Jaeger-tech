@@ -12,7 +12,8 @@
 - `MultipleFilesCase` 测试同一轮传输多个文件，以及带空格和标点的文件名。
 - `BinaryFileCase` 测试图片、特殊字节和 1 MiB 二进制文件。
 - `LongFilenameCase` 测试长文件名和接近平台长度限制的文件名。
-- `DirectoryTransferCase` 验证目录传输当前不受支持，这是一个预期失败测试。
+- `DirectoryTransferCase` 验证多层目录中的文件能按相对路径完整传输。
+- `ComprehensiveCase` 在多层目录中综合测试大文件、二进制文件、边界大小文件和已有文件更新。
 - 将各自的同步目录作为命令行参数传给 C++ 程序。
 - 将每个进程的 stdout 和 stderr 合并到各自的日志文件。
 - 使用统一的 10 秒截止时间，超时后终止并回收进程。
@@ -50,7 +51,8 @@ test/
 │        ├─ multiple_files.rs
 │        ├─ binary_file.rs
 │        ├─ long_filename.rs
-│        └─ directory_transfer.rs
+│        ├─ directory_transfer.rs
+│        └─ comprehensive.rs
 ├─ server_test/
 │  └─ server.exe
 └─ client_test/
@@ -70,7 +72,7 @@ test/sandbox/<case>/runs/<run_id>/client
 
 随后，runner 将这两个 `runs/<run_id>` 子目录作为命令行参数传给 `server.exe` 和 `client.exe`。因此，真正发生文件同步、产生同步结果以及执行校验的，是本轮的 `runs/<run_id>/server` 与 `runs/<run_id>/client`；基础 `server` 和 `client` 目录不会被 C++ 程序直接修改或同步。
 
-该流程适用于所有测例，包括 `default`、`just_demo`、`empty_file`、`multiple_files`、`binary_file`、`long_filename` 和 `directory_transfer`。普通测例会先在基础 sandbox 的 client 目录中生成 fixture，再复制到本轮 run 目录；`default` 则直接复制开发者预先放入基础 server/client 目录中的内容。
+该流程适用于所有测例，包括 `default`、`just_demo`、`empty_file`、`multiple_files`、`binary_file`、`long_filename`、`directory_transfer` 和 `comprehensive`。普通测例会先在基础 sandbox 的 client 目录中生成 fixture，再复制到本轮 run 目录；`default` 则直接复制开发者预先放入基础 server/client 目录中的内容。
 
 其中，`default` 使用保留输入的方式打开基础 sandbox，运行结束后基础目录仍会保留；其他测例每次运行会重新创建对应的基础 sandbox。测试结束后如需查看本轮输入和输出，应根据控制台中的 `run_id` 检查 `test/sandbox/<case>/runs/<run_id>/`，而不是只查看基础 `server` 和 `client` 目录。
 
@@ -108,9 +110,11 @@ xmake run test_runner -- --case default --case binary_file --verbose
 
 ## 其他测试案例
 
-除 Default 外，runner 会按顺序执行 `just_demo`、`empty_file`、`multiple_files`、`binary_file`、`long_filename` 和 `directory_transfer`。这些测试分别位于 `src/case/` 下的独立文件中，每个 case 负责准备自己的输入并执行自己的内容校验。
+除 Default 外，runner 会按顺序执行 `just_demo`、`empty_file`、`multiple_files`、`binary_file`、`long_filename`、`directory_transfer` 和 `comprehensive`。这些测试分别位于 `src/case/` 下的独立文件中，每个 case 负责准备自己的输入并执行自己的内容校验。
 
 `directory_transfer` 会在客户端目录中创建多层子目录和文件，并校验服务端是否按相对路径重建目录结构且完整保留文件内容。与其他 case 一样，它的进程异常退出、超时或校验失败均属于实际错误。
+
+`comprehensive` 会把 4 MiB 大文件、全字节范围二进制数据、0/1 字节文件、255/256/257 字节边界文件、深层嵌套文件和特殊文件名分散到不同目录中，并同时验证服务端已有的相同文件不会破坏结果、旧文件会被客户端版本覆盖。最终校验要求两侧目录项及完整目录树 SHA-256 hash 一致。
 
 ## 环境要求
 
