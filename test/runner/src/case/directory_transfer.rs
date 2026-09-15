@@ -1,7 +1,8 @@
 use std::path::Path;
 
-use crate::case::{TestCase, verify_file};
+use crate::case::TestCase;
 use crate::sandbox::Sandbox;
+use crate::verification::{calculate_directory_hash, verify_files};
 
 pub struct DirectoryTransferCase<'a> {
     sandbox: &'a Sandbox,
@@ -33,12 +34,18 @@ impl TestCase for DirectoryTransferCase<'_> {
         server_dir: &Path,
         client_dir: &Path,
     ) -> std::io::Result<()> {
-        verify_file(
-            self.sandbox,
-            server_dir,
-            client_dir,
-            Path::new("nested/deep/inside.txt"),
-        )
+        verify_files(server_dir, client_dir)?;
+
+        let server_hash = calculate_directory_hash(server_dir)?;
+        let client_hash = calculate_directory_hash(client_dir)?;
+        if server_hash != client_hash {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Directory hashes differ: server={server_hash}, client={client_hash}"),
+            ));
+        }
+
+        Ok(())
     }
 
     fn clean(&self) -> std::io::Result<()> {
