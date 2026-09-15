@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Windows integration tests
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Install xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: latest
+
+      - name: Check runner formatting
+        run: cargo fmt --manifest-path test/runner/Cargo.toml -- --check
+
+      - name: Run runner unit tests
+        run: cargo test --manifest-path test/runner/Cargo.toml
+
+      - name: Configure release build
+        run: xmake config --yes --mode=release
+
+      - name: Build integration test runner
+        run: xmake build test_runner
+
+      - name: Run integration tests
+        run: xmake run test_runner
