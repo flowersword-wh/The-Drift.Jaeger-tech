@@ -1,3 +1,4 @@
+#include <atomic>
 #include <exception>
 #include <filesystem>
 #define WIN32_LEAN_AND_MEAN
@@ -14,6 +15,7 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <stdio.h>
+#include "include/filehash.h"
 
 #define BUF_SIZE 256
 #pragma comment(lib, "ws2_32.lib")
@@ -128,10 +130,11 @@ int main(int argc, char *argv[])
 	if (!sendAll(client_fd, &sendfileCount, sizeof(sendfileCount))) {
 		throw std::runtime_error("send sendfileCount failed");
 	}
-
-	// 发送文件路径大小 和 文件路径
+	
+	// 发送文件信息
 	for (const auto &entry : fs::recursive_directory_iterator(folderpath)) {
 		if (entry.is_regular_file()) {
+			// 发送文件相对路径
 			std::string relativePath =
 					entry.path().lexically_relative(folderpath).string();
 			uint32_t pathSize = (uint32_t) (relativePath.size());
@@ -142,9 +145,16 @@ int main(int argc, char *argv[])
 			if (!sendAll(client_fd, relativePath.data(), pathSize)) {
 				throw std::runtime_error("send serverfile relativepath failed");
 			}
+			// 发送文件哈希值
+			Sha256 file_hash;
+			if(!calculate_hash(entry.path(), file_hash)){
+				throw std::runtime_error("calculate file hash failed");
+			}
+			if(!sendAll(client_fd, &file_hash, (int)file_hash.size())){
+				throw std::runtime_error("send file hash failed");
+			}
 		}
 	}
-
 	// 接收客户端发送的缺失文件数
 	std::uint32_t fileCount;
 	if (!recvAll(client_fd, (char *) &fileCount, sizeof(fileCount))) {
