@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::case::TestCase;
+use crate::case::{TestCase, verify_file};
 use crate::sandbox::Sandbox;
 
 pub struct DirectoryTransferCase<'a> {
@@ -15,7 +15,7 @@ impl<'a> DirectoryTransferCase<'a> {
 
 impl TestCase for DirectoryTransferCase<'_> {
     fn description(&self) -> &'static str {
-        "Place a file inside a nested client-side directory and confirm that recursive directory transfer is currently rejected by the server containment verification. This is an expected failure until directory transfer support is implemented."
+        "Place a file inside a nested client-side directory, transfer it recursively, and verify that its relative path and contents are preserved."
     }
 
     fn prepare(&self) -> std::io::Result<()> {
@@ -25,6 +25,20 @@ impl TestCase for DirectoryTransferCase<'_> {
             b"directory test",
         )?;
         Ok(())
+    }
+
+    fn verify(
+        &self,
+        _sandbox: &Sandbox,
+        server_dir: &Path,
+        client_dir: &Path,
+    ) -> std::io::Result<()> {
+        verify_file(
+            self.sandbox,
+            server_dir,
+            client_dir,
+            Path::new("nested/deep/inside.txt"),
+        )
     }
 
     fn clean(&self) -> std::io::Result<()> {
