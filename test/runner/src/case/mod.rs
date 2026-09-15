@@ -3,6 +3,7 @@ use std::{fs, path::Path};
 use crate::sandbox::Sandbox;
 
 pub mod binary_file;
+pub mod comprehensive;
 pub mod default;
 pub mod directory_transfer;
 pub mod empty_file;

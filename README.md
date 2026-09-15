@@ -114,7 +114,7 @@ logs/<case>/<run_id>/server.log
 logs/<case>/<run_id>/client.log
 ```
 
-runner 默认依次执行 `default`、`just_demo`、`empty_file`、`multiple_files`、`binary_file`、`long_filename` 和 `directory_transfer` 测试。通过重复指定 `--case` 可以选择部分用例，执行顺序仍由 runner 统一控制。每次执行都会生成唯一的 `run_id`，用于隔离同步目录和日志；测试失败时，控制台会输出该 ID 和测试说明。`directory_transfer` 用于确认多层子目录中的文件能够按相对路径递归传输，并保持文件内容不变。
+runner 默认依次执行 `default`、`just_demo`、`empty_file`、`multiple_files`、`binary_file`、`long_filename`、`directory_transfer` 和 `comprehensive` 测试。通过重复指定 `--case` 可以选择部分用例，执行顺序仍由 runner 统一控制。每次执行都会生成唯一的 `run_id`，用于隔离同步目录和日志；测试失败时，控制台会输出该 ID 和测试说明。`directory_transfer` 用于确认多层子目录中的文件能够按相对路径递归传输；`comprehensive` 则在不同目录中组合大文件、二进制数据、边界大小文件及已有文件，验证完整目录树的同步结果。
 
 runner 在进程完成后会递归检查 server 运行目录是否包含 client 运行目录中的全部目录项，但通用校验不比较文件内容。`default` 还会执行目录项对称差校验和完整目录树 SHA-256 hash 校验；因此 Default 要求两边目录结构和文件内容完全一致。
 
