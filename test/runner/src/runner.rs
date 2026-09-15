@@ -66,7 +66,7 @@ impl CaseKind {
     }
 
     fn expected_success(self) -> bool {
-        !matches!(self, Self::DirectoryTransfer)
+        true
     }
 }
 
