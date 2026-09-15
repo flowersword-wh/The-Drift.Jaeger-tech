@@ -1,6 +1,3 @@
-
-
-#include <cstddef>
 #include <filesystem>
 #include <map>
 #define WIN32_LEAN_AND_MEAN
@@ -9,7 +6,6 @@
 #include "include/fileoverview.h"
 #include <cstdint>
 #include <fstream>
-#include <set>
 #include <vector>
 #include <stdexcept>
 #include <string>
@@ -179,7 +175,7 @@ int main(int argc, char *argv[])
 			if (!calculate_hash(entry.path(), clientHash)) {
 				throw std::runtime_error("calculate client hash failed");
 			}
-			
+
 			if (clientHash != serverFiles.find(currentPath)->second) {
 				filelost.push_back(
 						{entry.path(), entry.path().lexically_relative(folderPath),

@@ -1,5 +1,3 @@
-#include <atomic>
-#include <exception>
 #include <filesystem>
 #define WIN32_LEAN_AND_MEAN
 
@@ -14,7 +12,6 @@
 #include <windows.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
-#include <stdio.h>
 #include "include/filehash.h"
 
 #define BUF_SIZE 256
