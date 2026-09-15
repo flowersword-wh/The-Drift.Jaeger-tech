@@ -11,6 +11,8 @@ add_cxflags("/utf-8")
 
 add_includedirs("include")
  
+add_requires("openssl")
+
 local function copy_exe(target, subdir, path_api, os_api)
   local deploy_dir = path_api.join(os_api.projectdir(), "test", subdir)
 
@@ -31,7 +33,8 @@ end
 
 target("server")
   set_kind("binary")
-  add_files("server.cpp", "fileoverview.cpp")
+  add_files("server.cpp", "fileoverview.cpp","filehash.cpp")
+  add_packages("openssl")
 
   after_build(function(target)
       copy_exe(target, "server_test", path, os)
@@ -39,7 +42,8 @@ target("server")
 
 target("client")
   set_kind("binary")
-  add_files("client.cpp")
+  add_files("client.cpp","filehash.cpp")
+  add_packages("openssl")
 
   after_build(function(target)
       copy_exe(target, "client_test", path, os)

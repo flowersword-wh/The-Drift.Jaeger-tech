@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <filesystem>
+#include <map>
 #define WIN32_LEAN_AND_MEAN
 
 #include "include/logger.h"
@@ -16,6 +17,7 @@
 #include <windows.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include "include/filehash.h"
 
 #define BUF_SIZE 256
 #pragma comment(lib, "ws2_32.lib")
@@ -116,11 +118,11 @@ int main(int argc, char *argv[])
 	logger.info("Connection established.");
 
 	// 先创建用于存储服务端文件相对路径的存储逻辑
-	std::set<std::string> serverFiles;
+	std::map<std::string, Sha256> serverFiles;
 	struct file {
 		fs::path absolute_path;
 		fs::path relative_path;
-		size_t size;
+		uint64_t size;
 		std::string name;
 	};
 
@@ -132,23 +134,28 @@ int main(int argc, char *argv[])
 		throw std::runtime_error("receive serverfile count failed");
 	}
 
-	// 循环接收文件相对路径大小 和 相对路径
+	// 循环接收文件相对路径和哈希值
 	for (int i = 0; i < serverfileCount; ++i) {
 		std::uint32_t pathSize = 0;
-
+		// 计算相对路径大小
 		if (!recvAll(client_fd, &pathSize, sizeof(pathSize))) {
 			throw std::runtime_error("receive filepath size failed");
 		}
-
+		// 接收相对路径
 		std::string relativePath(pathSize, '\0');
 
 		if (!recvAll(client_fd, relativePath.data(), (int) (pathSize))) {
 			throw std::runtime_error("receive filepath failed");
 		}
+		// 接收哈希值
+		Sha256 serverHash{};
+		if (!recvAll(client_fd, serverHash.data(),
+								 static_cast<int>(serverHash.size()))) {
+			throw std::runtime_error("receive hash failed");
+		}
 
-		serverFiles.insert(relativePath);
+		serverFiles.emplace(relativePath, serverHash);
 	}
-
 	// 遍历查找 缺失就标记 记录缺失数
 	logger.info("Starting file synchronization...");
 	std::uint32_t fileCount = 0;
@@ -159,12 +166,26 @@ int main(int argc, char *argv[])
 		if (entry.path().filename() == "client.exe")
 			continue;
 
-		if (serverFiles.find(currentPath) == serverFiles.end() &&
-				entry.is_regular_file()) {
+		Sha256 clientHash{};
+		if (!entry.is_regular_file())
+			continue;
+		if (serverFiles.find(currentPath) == serverFiles.end()) {
 			filelost.push_back({entry.path(),
 													entry.path().lexically_relative(folderPath),
 													entry.file_size(), entry.path().filename().string()});
 			fileCount++;
+		} else {
+			//如果找到了相同文件，则计算哈希值是否一样
+			if (!calculate_hash(entry.path(), clientHash)) {
+				throw std::runtime_error("calculate client hash failed");
+			}
+			
+			if (clientHash != serverFiles.find(currentPath)->second) {
+				filelost.push_back(
+						{entry.path(), entry.path().lexically_relative(folderPath),
+						 entry.file_size(), entry.path().filename().string()});
+				fileCount++;
+			}
 		}
 	}
 
