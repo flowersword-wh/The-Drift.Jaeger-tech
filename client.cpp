@@ -127,6 +127,7 @@ int main(int argc, char *argv[])
 		fs::path relativePath;
 		Sha256 hash{};
 	};
+	// 使用 map 方便查找
 	std::map<std::string, EntryData> serverEntries;
 	// 存储对比本地后缺失文件信息的清单
 	struct PendingEntry {
@@ -142,7 +143,7 @@ int main(int argc, char *argv[])
 	if (!recvAll(client_fd, &serverEntryCount, sizeof(serverEntryCount))) {
 		throw std::runtime_error("receive serverEntryCount failed");
 	}
-
+	// 接收服务端发来的项
 	for (int i = 0; i < serverEntryCount; i++) {
 		EntryData data{};
 		std::uint32_t pathSize = 0;
@@ -169,7 +170,7 @@ int main(int argc, char *argv[])
 		} else {
 			throw std::runtime_error("invalid entry type");
 		}
-
+		// 初始化到data结构体里 方便保存
 		data.entryType = entryType;
 		data.relativePath = fs::path(relativePath);
 
@@ -186,6 +187,7 @@ int main(int argc, char *argv[])
 			}
 			data.hash = serverHash;
 		}
+		//插入serverEntries
 		serverEntries.emplace(data.relativePath.string(), data);
 	}
 	// 遍历查找 缺失就标记 记录缺失数

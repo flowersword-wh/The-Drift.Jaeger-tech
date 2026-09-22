@@ -152,6 +152,7 @@ int main(int argc, char *argv[])
 			throw std::runtime_error("send serverfile relativepath failed");
 		}
 		EntryType entryType;
+		// 通过 entryType 区别发送的内容
 		if (entry.is_regular_file()) {
 			// 发送文件类型值
 			entryType = EntryType::File;
@@ -198,7 +199,6 @@ int main(int argc, char *argv[])
 		if (!recvAll(client_fd, &typeValue, sizeof(typeValue))) {
 			throw std::runtime_error("typeValue receive failed");
 		}
-
 		// 接收文件相对路径大小
 		std::uint32_t pathSize;
 		if (!recvAll(client_fd, &pathSize, sizeof(pathSize))) {
