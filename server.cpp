@@ -1,3 +1,5 @@
+#include "openssl/ossl_typ.h"
+#include <chrono>
 #include <filesystem>
 #define WIN32_LEAN_AND_MEAN
 
@@ -120,35 +122,62 @@ int main(int argc, char *argv[])
 	}
 	logger.info("Connection established.");
 
-	// 取得要同步文件夹中的文件数量
-	uint32_t sendfileCount = ServerFiles_Count(folderpath);
-
-	// 把文件数量发送给客户端
-	if (!sendAll(client_fd, &sendfileCount, sizeof(sendfileCount))) {
-		throw std::runtime_error("send sendfileCount failed");
-	}
-	
-	// 发送文件信息
+	// 读取文件夹种所有的项 （空目录和文件）
+	std::uint32_t serverEntryCount = 0;
 	for (const auto &entry : fs::recursive_directory_iterator(folderpath)) {
-		if (entry.is_regular_file()) {
-			// 发送文件相对路径
-			std::string relativePath =
-					entry.path().lexically_relative(folderpath).string();
-			uint32_t pathSize = (uint32_t) (relativePath.size());
+		if (entry.is_regular_file() || entry.is_directory()) {
+			++serverEntryCount;
+		}
+	}
 
-			if (!sendAll(client_fd, &pathSize, sizeof(pathSize))) {
-				throw std::runtime_error("send serverfile pathsize failed");
+	if (!sendAll(client_fd, &serverEntryCount, sizeof(serverEntryCount))) {
+		throw std::runtime_error("send serverEntryCount failed");
+	}
+	// 区分文件和空目录
+	enum class EntryType : std::uint8_t {
+		File = 1,
+		Directory = 2,
+	};
+	// 发送文件夹内容
+	for (const auto &entry : fs::recursive_directory_iterator(folderpath)) {
+		// 发送文件相对路径
+		std::string relativePath =
+				entry.path().lexically_relative(folderpath).string();
+		uint32_t pathSize = (uint32_t) (relativePath.size());
+
+		if (!sendAll(client_fd, &pathSize, sizeof(pathSize))) {
+			throw std::runtime_error("send serverfile pathsize failed");
+		}
+		if (!sendAll(client_fd, relativePath.data(), pathSize)) {
+			throw std::runtime_error("send serverfile relativepath failed");
+		}
+		EntryType entryType;
+		if (entry.is_regular_file()) {
+			// 发送文件类型值
+			entryType = EntryType::File;
+			std::uint8_t typeValue = (std::uint8_t) entryType;
+			if (!sendAll(client_fd, &typeValue, sizeof(typeValue))) {
+				throw std::runtime_error("send file typevalue failed");
 			}
-			if (!sendAll(client_fd, relativePath.data(), pathSize)) {
-				throw std::runtime_error("send serverfile relativepath failed");
+			// 发送文件大小
+			std::uint64_t filesize = entry.file_size();
+			if (!sendAll(client_fd, &filesize, sizeof(filesize))) {
+				throw std::runtime_error("send filesize failed");
 			}
 			// 发送文件哈希值
 			Sha256 file_hash;
-			if(!calculate_hash(entry.path(), file_hash)){
+			if (!calculate_hash(entry.path(), file_hash)) {
 				throw std::runtime_error("calculate file hash failed");
 			}
-			if(!sendAll(client_fd, &file_hash, (int)file_hash.size())){
+			if (!sendAll(client_fd, &file_hash, (int) file_hash.size())) {
 				throw std::runtime_error("send file hash failed");
+			}
+		} else if (entry.is_directory()) {
+			// 发送文件类型值
+			entryType = EntryType::Directory;
+			std::uint8_t typeValue = std::uint8_t(entryType);
+			if (!sendAll(client_fd, &typeValue, sizeof(typeValue))) {
+				throw std::runtime_error("send file typevalue failed");
 			}
 		}
 	}
@@ -164,12 +193,11 @@ int main(int argc, char *argv[])
 	while (fileCount--) {
 
 		std::uint64_t filesize;
-
-		// 接收文件大小
-		if (!recvAll(client_fd, (char *) (&filesize), sizeof(filesize))) {
-			throw std::runtime_error("filesize receive failed");
-		};
-		logger.info("Received file size: " + std::to_string(filesize));
+		std::uint8_t typeValue = 0;
+		// 接收文件类型值
+		if (!recvAll(client_fd, &typeValue, sizeof(typeValue))) {
+			throw std::runtime_error("typeValue receive failed");
+		}
 
 		// 接收文件相对路径大小
 		std::uint32_t pathSize;
@@ -179,35 +207,47 @@ int main(int argc, char *argv[])
 		// 接收文件相对路径
 		std::string relativePath(pathSize, '\0');
 		if (!recvAll(client_fd, relativePath.data(), pathSize)) {
-			throw std::runtime_error("receivec relativePath failed");
+			throw std::runtime_error("receive relativePath failed");
 		}
-
-		// 接收文件内容
-		fs::path savepath = fs::path(folderpath) / fs::path(relativePath);
-		logger.info("Saving file to: " + savepath.string());
-		fs::create_directories(savepath.parent_path());
-		std::ofstream file(savepath, std::ios::binary | std::ios::trunc);
-		if (!file) {
-			throw std::runtime_error("file open failed");
-		}
-
-		char buffer[256];
-		std::uint64_t remain = filesize;
-		while (remain > 0) {
-			int min =
-					static_cast<int>(std::min<std::uint64_t>(remain, sizeof(buffer)));
-			if (!recvAll(client_fd, buffer, min)) {
-				throw std::runtime_error("file receive error");
+		if (typeValue == (std::uint8_t) EntryType::File) {
+			// 接收文件大小
+			if (!recvAll(client_fd, (&filesize), sizeof(filesize))) {
+				throw std::runtime_error("filesize receive failed");
 			};
-			file.write(buffer, min);
-			if (!file) {
-				throw std::runtime_error("file write failed");
-			}
-			remain -= min;
-		}
+			logger.info("Received file size: " + std::to_string(filesize));
 
-		logger.info("Expected bytes to write: " + std::to_string(filesize) + " B");
-		logger.info("Bytes written: " + std::to_string(filesize - remain) + " B");
+			// 接收文件内容
+			fs::path relative = fs::path(relativePath).make_preferred();
+			fs::path savepath = fs::path(folderpath) / relative;
+			logger.info("Saving file to: " + savepath.string());
+			fs::create_directories(savepath.parent_path());
+			std::ofstream file(savepath, std::ios::binary | std::ios::trunc);
+			if (!file) {
+				throw std::runtime_error("file open failed");
+			}
+
+			char buffer[256];
+			std::uint64_t remain = filesize;
+			while (remain > 0) {
+				int min =
+						static_cast<int>(std::min<std::uint64_t>(remain, sizeof(buffer)));
+				if (!recvAll(client_fd, buffer, min)) {
+					throw std::runtime_error("file receive error");
+				};
+				file.write(buffer, min);
+				if (!file) {
+					throw std::runtime_error("file write failed");
+				}
+				remain -= min;
+			}
+
+			logger.info("Expected bytes to write: " + std::to_string(filesize) + " B");
+			logger.info("Bytes written: " + std::to_string(filesize - remain) + " B");
+		} else if (typeValue == (std::uint8_t) EntryType::Directory) {
+			fs::path relative = fs::path(relativePath).make_preferred();
+			fs::path savepath = fs::path(folderpath) / relative;
+			fs::create_directories(savepath);
+		}
 	}
 	logger.info("All files received.");
 	// 关闭连接
