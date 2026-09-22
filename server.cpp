@@ -1,8 +1,7 @@
-#include "openssl/ossl_typ.h"
-#include <chrono>
 #include <filesystem>
 #define WIN32_LEAN_AND_MEAN
 
+#include "net/socket_transfer.h"
 #include "include/fileoverview.h"
 #include "include/logger.h"
 #include <algorithm>
@@ -19,44 +18,6 @@
 #define BUF_SIZE 256
 #pragma comment(lib, "ws2_32.lib")
 
-int judge(int result, const std::string &message)
-{
-	if (result == SOCKET_ERROR) {
-		int error = WSAGetLastError();
-
-		throw std::runtime_error(message +
-														 " failed, WSA error: " + std::to_string(error));
-	}
-
-	return 0;
-}
-bool sendAll(SOCKET fd, const void *data, int len)
-{
-	int sent = 0;
-	const char *bytes = (char *) (data);
-	while (sent < len) {
-		int result = send(fd, bytes + sent, len - sent, 0);
-		if (result <= 0) {
-			return false;
-		}
-		sent += result;
-	}
-	return true;
-}
-
-bool recvAll(SOCKET fd, void *data, int len)
-{
-	int received = 0;
-	char *bytes = (char *) (data);
-	while (received < len) {
-		int result = recv(fd, bytes + received, len - received, 0);
-		if (result <= 0) {
-			return false;
-		}
-		received += result;
-	}
-	return true;
-}
 int main(int argc, char *argv[])
 {
 	Logger logger;
@@ -129,10 +90,9 @@ int main(int argc, char *argv[])
 			++serverEntryCount;
 		}
 	}
-
-	if (!sendAll(client_fd, &serverEntryCount, sizeof(serverEntryCount))) {
-		throw std::runtime_error("send serverEntryCount failed");
-	}
+	// 发送服务端项数
+	Sender(client_fd, &serverEntryCount, sizeof(serverEntryCount),
+				 "send serverEntryCount failed");
 	// 区分文件和空目录
 	enum class EntryType : std::uint8_t {
 		File = 1,
@@ -145,48 +105,38 @@ int main(int argc, char *argv[])
 				entry.path().lexically_relative(folderpath).string();
 		uint32_t pathSize = (uint32_t) (relativePath.size());
 
-		if (!sendAll(client_fd, &pathSize, sizeof(pathSize))) {
-			throw std::runtime_error("send serverfile pathsize failed");
-		}
-		if (!sendAll(client_fd, relativePath.data(), pathSize)) {
-			throw std::runtime_error("send serverfile relativepath failed");
-		}
+		Sender(client_fd, &pathSize, sizeof(pathSize),
+					 "send serverfile pathsize failed");
+		Sender(client_fd, relativePath.data(), pathSize,
+					 "send serverfile relativepath failed");
 		EntryType entryType;
 		// 通过 entryType 区别发送的内容
 		if (entry.is_regular_file()) {
-			// 发送文件类型值
 			entryType = EntryType::File;
 			std::uint8_t typeValue = (std::uint8_t) entryType;
-			if (!sendAll(client_fd, &typeValue, sizeof(typeValue))) {
-				throw std::runtime_error("send file typevalue failed");
-			}
-			// 发送文件大小
 			std::uint64_t filesize = entry.file_size();
-			if (!sendAll(client_fd, &filesize, sizeof(filesize))) {
-				throw std::runtime_error("send filesize failed");
-			}
-			// 发送文件哈希值
 			Sha256 file_hash;
+			// 发送文件类型值 ——> 文件大小 ——> 文件哈希值
+			Sender(client_fd, &typeValue, sizeof(typeValue),
+						 "send file typevalue failed");
+			Sender(client_fd, &filesize, sizeof(filesize), "send filesize failed");
 			if (!calculate_hash(entry.path(), file_hash)) {
 				throw std::runtime_error("calculate file hash failed");
 			}
-			if (!sendAll(client_fd, &file_hash, (int) file_hash.size())) {
-				throw std::runtime_error("send file hash failed");
-			}
+			Sender(client_fd, &file_hash, (int) file_hash.size(),
+						 "send file hash failed");
 		} else if (entry.is_directory()) {
 			// 发送文件类型值
 			entryType = EntryType::Directory;
 			std::uint8_t typeValue = std::uint8_t(entryType);
-			if (!sendAll(client_fd, &typeValue, sizeof(typeValue))) {
-				throw std::runtime_error("send file typevalue failed");
-			}
+			Sender(client_fd, &typeValue, sizeof(typeValue),
+						 "send file typevalue failed");
 		}
 	}
 	// 接收客户端发送的缺失文件数
 	std::uint32_t fileCount;
-	if (!recvAll(client_fd, (char *) &fileCount, sizeof(fileCount))) {
-		throw std::runtime_error("fileCount receive failed");
-	}
+	Receiver(client_fd, (char *) &fileCount, sizeof(fileCount),
+					 "fileCount receive failed");
 
 	// 接收客户端发送的文件
 	logger.info("Waiting for files from client...");
@@ -196,24 +146,19 @@ int main(int argc, char *argv[])
 		std::uint64_t filesize;
 		std::uint8_t typeValue = 0;
 		// 接收文件类型值
-		if (!recvAll(client_fd, &typeValue, sizeof(typeValue))) {
-			throw std::runtime_error("typeValue receive failed");
-		}
+		Receiver(client_fd, &typeValue, sizeof(typeValue),
+						 "typeValue receive failed");
 		// 接收文件相对路径大小
 		std::uint32_t pathSize;
-		if (!recvAll(client_fd, &pathSize, sizeof(pathSize))) {
-			throw std::runtime_error("receive pathSize failed");
-		}
+		Receiver(client_fd, &pathSize, sizeof(pathSize), "receive pathSize failed");
 		// 接收文件相对路径
 		std::string relativePath(pathSize, '\0');
-		if (!recvAll(client_fd, relativePath.data(), pathSize)) {
-			throw std::runtime_error("receive relativePath failed");
-		}
+		Receiver(client_fd, relativePath.data(), pathSize,
+						 "receive relativePath failed");
 		if (typeValue == (std::uint8_t) EntryType::File) {
 			// 接收文件大小
-			if (!recvAll(client_fd, (&filesize), sizeof(filesize))) {
-				throw std::runtime_error("filesize receive failed");
-			};
+			Receiver(client_fd, &filesize, sizeof(filesize),
+							 "filesize receive failed");
 			logger.info("Received file size: " + std::to_string(filesize));
 
 			// 接收文件内容
@@ -229,11 +174,8 @@ int main(int argc, char *argv[])
 			char buffer[256];
 			std::uint64_t remain = filesize;
 			while (remain > 0) {
-				int min =
-						static_cast<int>(std::min<std::uint64_t>(remain, sizeof(buffer)));
-				if (!recvAll(client_fd, buffer, min)) {
-					throw std::runtime_error("file receive error");
-				};
+				int min = (int) (std::min<std::uint64_t>(remain, sizeof(buffer)));
+				Receiver(client_fd, buffer, min, "file receive error");
 				file.write(buffer, min);
 				if (!file) {
 					throw std::runtime_error("file write failed");
@@ -241,7 +183,8 @@ int main(int argc, char *argv[])
 				remain -= min;
 			}
 
-			logger.info("Expected bytes to write: " + std::to_string(filesize) + " B");
+			logger.info("Expected bytes to write: " + std::to_string(filesize) +
+									" B");
 			logger.info("Bytes written: " + std::to_string(filesize - remain) + " B");
 		} else if (typeValue == (std::uint8_t) EntryType::Directory) {
 			fs::path relative = fs::path(relativePath).make_preferred();

@@ -33,7 +33,8 @@ end
 
 target("server")
   set_kind("binary")
-  add_files("server.cpp", "fileoverview.cpp","filehash.cpp")
+  add_files("server.cpp", "fileoverview.cpp", "filehash.cpp",
+          "net/socket_transfer.cpp")
   add_packages("openssl")
 
   after_build(function(target)
@@ -42,7 +43,8 @@ target("server")
 
 target("client")
   set_kind("binary")
-  add_files("client.cpp","filehash.cpp")
+  add_files("client.cpp", "filehash.cpp",
+          "net/socket_transfer.cpp")
   add_packages("openssl")
 
   after_build(function(target)
