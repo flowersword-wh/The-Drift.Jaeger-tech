@@ -114,12 +114,14 @@ int main(int argc, char *argv[])
 		// 接收相对路径大小
 		Receiver(client_fd, &pathSize, sizeof(pathSize),
 								"receive filepath size failed");
-
+		if(pathSize > 4096){
+			throw std::runtime_error("pathsize exceeds limits");
+		} 
 		// 接收相对路径
 		std::string relativePath(pathSize, '\0');
 		Receiver(client_fd, relativePath.data(), (int) (pathSize),
 								"receive filepath failed");
-
+		
 		// 接收文件类型值
 		std::uint8_t typeValue;
 		Receiver(client_fd, &typeValue, sizeof(typeValue),

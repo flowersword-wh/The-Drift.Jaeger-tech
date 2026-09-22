@@ -1,17 +1,16 @@
 # The-Drift.Jaeger-tech
 
-一个基于 Windows Winsock TCP 的目录文件同步实验项目。服务端先发送目标目录的文件概览，客户端比较自己的目录内容后，把服务端缺少的普通文件发送过去。
+一个基于 Windows Winsock TCP 的目录文件同步实验项目。服务端先发送目标目录的目录项概览，客户端比较自己的目录内容后，把服务端缺少或内容不同的文件和目录发送过去。
 
-> 当前实现是单向补充同步：文件从客户端发送到服务端，不会删除服务端文件，也不会把服务端独有的文件发送回客户端。
+> 当前实现是单向补充同步：文件从客户端发送到服务端，不会删除服务端独有的文件或目录，也不会把服务端独有的文件发送回客户端。
 
 ## 功能
 
 - C++17 实现 TCP 服务端和客户端。
 - 服务端监听 `8080` 端口，客户端连接本机回环地址 `127.0.0.1:8080`。
 - 通过命令行参数指定两端的同步目录。
-- 使用 `fileoverview.txt` 记录目录树中发现的文件名；当前协议尚未保留相对路径。
-- 支持传输普通文件及空文件。
-- 提供 `fileoverview` 工具，用于手动生成目录概览。
+- 通过 TCP 发送服务端目录项概览，按相对路径保留目录结构。
+- 支持传输普通文件、空文件和空目录；通过文件大小和 SHA-256 摘要判断已有文件是否需要更新。
 - 提供 Rust 集成测试 runner，可自动构建、启动和验证服务端与客户端。
 - Rust runner 支持通过 `--case` 选择测试用例，并通过 `--verbose` 输出调试日志。
 
@@ -20,6 +19,7 @@
 - Windows
 - [xmake](https://xmake.io/)
 - C++17 编译环境，推荐 MSVC
+- OpenSSL（由 xmake 管理）
 - Rust 工具链（运行集成测试时需要 `cargo`）
 
 检查工具链：
@@ -35,8 +35,8 @@ cargo --version
 在项目根目录执行：
 
 ```powershell
-# 构建服务端、客户端和目录概览工具
-xmake build server client fileoverview
+# 构建服务端和客户端
+xmake build server client
 ```
 
 构建产物通常位于 `build/windows/x64/<配置>/` 目录中，具体路径以 xmake 输出为准。
@@ -45,7 +45,7 @@ xmake build server client fileoverview
 
 ```powershell
 xmake f -m release
-xmake build server client fileoverview
+xmake build server client
 ```
 
 ## 运行
@@ -62,7 +62,7 @@ xmake run server -- C:\path\to\server-folder
 xmake run client -- C:\path\to\client-folder
 ```
 
-使用时先启动服务端，再启动客户端。两端必须使用不同的工作目录，并确保 `8080` 端口未被其他程序占用。
+使用时先启动服务端，再启动客户端。两端需要指定各自的同步目录，并确保 `8080` 端口未被其他程序占用。
 
 也可以直接运行生成的 `server.exe` 和 `client.exe`：
 
@@ -71,7 +71,7 @@ server.exe <server-folder>
 client.exe <client-folder>
 ```
 
-程序会在当前工作目录生成或覆盖 `fileoverview.txt`。服务端接收文件时，若目标文件已存在，会直接覆盖。
+服务端通过 TCP 发送目录项概览，不生成 `fileoverview.txt`。服务端接收文件时，若目标文件已存在，会直接覆盖。
 
 ## 集成测试
 
@@ -120,7 +120,7 @@ runner 在进程完成后会递归检查 server 运行目录是否包含 client 
 
 集成测试出现错误时，优先查看 [`test/runner/TEST_CASES.md`](test/runner/TEST_CASES.md)，确认对应测试的目的、输入数据、校验方式和预期结果，再根据控制台输出的 `run_id` 检查对应日志。
 
-测试 runner 默认在进程超过 10 秒未退出时终止进程。执行 `xmake clean` 会删除测试生成的 `logs` 和 `test/sandbox` 目录，不会删除源代码。
+测试 runner 默认在进程超过 10 秒未退出时终止进程。执行 `xmake clean` 会删除测试生成的 `logs` 和 `test/sandbox` 目录，不会删除源代码；如果在 default sandbox 中手动放入测试数据，也会一并删除。
 
 ## 目录结构
 
@@ -128,10 +128,12 @@ runner 在进程完成后会递归检查 server 运行目录是否包含 client 
 .
 ├─ client.cpp                 # TCP 客户端
 ├─ server.cpp                 # TCP 服务端
-├─ fileoverview.cpp           # 目录概览生成逻辑
-├─ fileoverview_main.cpp      # 目录概览命令行工具
+├─ fileoverview.cpp           # 目录参数检查与文件计数辅助函数
+├─ filehash.cpp               # 文件 SHA-256 计算
+├─ net/socket_transfer.cpp    # TCP 完整收发辅助函数
 ├─ include/
 │  ├─ fileoverview.h
+│  ├─ filehash.h
 │  └─ logger.h
 ├─ test/runner/               # Rust 集成测试 runner
 ├─ docs/                      # 设计与测试相关文档
@@ -140,13 +142,13 @@ runner 在进程完成后会递归检查 server 运行目录是否包含 client 
 
 ## 当前限制
 
-- C++ 同步协议虽然会遍历子目录，但传输时只使用文件名而不携带相对路径，因此尚未实现可靠的目录树同步；同名文件也可能发生冲突。
-- Rust runner 的边界测试会分别覆盖空文件、多文件、二进制文件、大文件和长文件名；目录传输由独立的预期失败测试覆盖。
+- C++ 同步协议使用相对路径传输文件和目录；同路径文件与目录类型冲突时尚未定义恢复策略。
+- Rust runner 的边界测试覆盖空文件、多文件、二进制文件、大文件、长文件名和多层目录；尚无专门的空目录测试。
 - Rust runner 的通用校验会递归检查 server 是否包含 client 的目录项，但默认不比较文件内容。
 - `default` 会额外使用递归对称差和目录 SHA-256 hash 校验，因此 server 不能包含 client 之外的额外目录项或文件。
 - 服务端和客户端固定使用 TCP `8080` 端口。
-- 协议未提供文件校验、断点续传或加密能力。
-- 接收到的文件名来自客户端，生产环境使用前应补充路径校验和更严格的协议校验。
+- 协议使用 SHA-256 比较已有文件，但传输后没有独立的接收端摘要复核，也未提供断点续传或加密能力。
+- 接收到的相对路径来自客户端，服务端尚未校验绝对路径或路径穿越；生产环境使用前应补充路径校验和更严格的协议校验。
 
 ## 相关文档
 
