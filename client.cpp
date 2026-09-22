@@ -1,3 +1,4 @@
+#include <atomic>
 #include <filesystem>
 #include <map>
 #define WIN32_LEAN_AND_MEAN
@@ -113,27 +114,39 @@ int main(int argc, char *argv[])
 	judge(connect(client_fd, (sockaddr *) &sockaddr_in_t, len), "connect");
 	logger.info("Connection established.");
 
-	// 先创建用于存储服务端文件相对路径的存储逻辑
-	std::map<std::string, Sha256> serverFiles;
-	struct file {
-		fs::path absolute_path;
-		fs::path relative_path;
-		uint64_t size;
-		std::string name;
+	// 区分项是文件还是目录
+	enum class EntryType : std::uint8_t {
+		File = 1,
+		Directory = 2,
 	};
 
-	std::vector<file> filelost{};
+	// 服务端发来的信息的存储容器
+	struct EntryData {
+		EntryType entryType;
+		std::uint64_t fileSize = 0;
+		fs::path relativePath;
+		Sha256 hash{};
+	};
+	std::map<std::string, EntryData> serverEntries;
+	// 存储对比本地后缺失文件信息的清单
+	struct PendingEntry {
+		EntryType entryType;
+		uint64_t size;
+		fs::path absolute_path;
+		fs::path relative_path;
+	};
 
-	// 接收服务端要同步文件夹里的文件数量
-	uint32_t serverfileCount;
-	if (!recvAll(client_fd, &serverfileCount, sizeof(serverfileCount))) {
-		throw std::runtime_error("receive serverfile count failed");
+	std::vector<PendingEntry> LostEntries;
+	// 接收服务端发来的 entry 数量
+	std::uint32_t serverEntryCount = 0;
+	if (!recvAll(client_fd, &serverEntryCount, sizeof(serverEntryCount))) {
+		throw std::runtime_error("receive serverEntryCount failed");
 	}
 
-	// 循环接收文件相对路径和哈希值
-	for (int i = 0; i < serverfileCount; ++i) {
+	for (int i = 0; i < serverEntryCount; i++) {
+		EntryData data{};
 		std::uint32_t pathSize = 0;
-		// 计算相对路径大小
+		// 接收相对路径大小
 		if (!recvAll(client_fd, &pathSize, sizeof(pathSize))) {
 			throw std::runtime_error("receive filepath size failed");
 		}
@@ -143,96 +156,133 @@ int main(int argc, char *argv[])
 		if (!recvAll(client_fd, relativePath.data(), (int) (pathSize))) {
 			throw std::runtime_error("receive filepath failed");
 		}
-		// 接收哈希值
-		Sha256 serverHash{};
-		if (!recvAll(client_fd, serverHash.data(),
-								 static_cast<int>(serverHash.size()))) {
-			throw std::runtime_error("receive hash failed");
+		// 接收文件类型值
+		std::uint8_t typeValue;
+		if (!recvAll(client_fd, &typeValue, sizeof(typeValue))) {
+			throw std::runtime_error("receive file typevalue failed");
+		}
+		EntryType entryType;
+		if (typeValue == (std::uint8_t) (EntryType::File)) {
+			entryType = EntryType::File;
+		} else if (typeValue == (std::uint8_t) (EntryType::Directory)) {
+			entryType = EntryType::Directory;
+		} else {
+			throw std::runtime_error("invalid entry type");
 		}
 
-		serverFiles.emplace(relativePath, serverHash);
+		data.entryType = entryType;
+		data.relativePath = fs::path(relativePath);
+
+		if (entryType == EntryType::File) {
+			// 如果是文件 接收文件大小和文件哈希值
+			if (!recvAll(client_fd, &data.fileSize, sizeof(data.fileSize))) {
+				throw std::runtime_error("receive filesize failed");
+			}
+			// 接收哈希值
+			Sha256 serverHash{};
+			if (!recvAll(client_fd, serverHash.data(),
+									 static_cast<int>(serverHash.size()))) {
+				throw std::runtime_error("receive file hash failed");
+			}
+			data.hash = serverHash;
+		}
+		serverEntries.emplace(data.relativePath.string(), data);
 	}
 	// 遍历查找 缺失就标记 记录缺失数
 	logger.info("Starting file synchronization...");
-	std::uint32_t fileCount = 0;
 	for (const auto &entry : fs::recursive_directory_iterator(folderPath)) {
-		std::string currentPath =
-				entry.path().lexically_relative(folderPath).string();
-		// 如果客户端同步文件夹选择包含client.exe的文件夹，则不能发送client.exe
-		if (entry.path().filename() == "client.exe")
-			continue;
+		// 初始化本地文件信息清单 pending项
+		PendingEntry pending{};
+		pending.absolute_path = entry.path();
+		pending.relative_path = entry.path().lexically_relative(folderPath);
 
-		Sha256 clientHash{};
-		if (!entry.is_regular_file())
-			continue;
-		if (serverFiles.find(currentPath) == serverFiles.end()) {
-			filelost.push_back({entry.path(),
-													entry.path().lexically_relative(folderPath),
-													entry.file_size(), entry.path().filename().string()});
-			fileCount++;
+		if (entry.is_directory()) {
+			pending.entryType = EntryType::Directory;
+		} else if (entry.is_regular_file()) {
+			pending.size = entry.file_size();
+			pending.entryType = EntryType::File;
 		} else {
-			//如果找到了相同文件，则计算哈希值是否一样
-			if (!calculate_hash(entry.path(), clientHash)) {
-				throw std::runtime_error("calculate client hash failed");
-			}
+			continue;
+		}
 
-			if (clientHash != serverFiles.find(currentPath)->second) {
-				filelost.push_back(
-						{entry.path(), entry.path().lexically_relative(folderPath),
-						 entry.file_size(), entry.path().filename().string()});
-				fileCount++;
+		// 对比服务端信息清单
+		std::string path = pending.relative_path.generic_string();
+		auto serverone = serverEntries.find(path);
+		// 找不到 加入
+		if (serverone == serverEntries.end()) {
+			LostEntries.push_back(pending);
+			continue;
+		}
+		// 路径相同 类型不同 加入
+		if (serverone->second.entryType != pending.entryType) {
+			LostEntries.push_back(pending);
+			continue;
+		}
+		// 如果是文件 对比文件大小和哈希值
+		// 如果是目录 路径和类型相同就可过
+		if (serverone->second.entryType == EntryType::File) {
+			// 文件大小不同 一定不同 加入
+			if (serverone->second.fileSize != pending.size) {
+				LostEntries.push_back(pending);
+				continue;
+			}
+			// 哈希值不同 一定不同 加入
+			Sha256 clientHash{};
+			if (!calculate_hash(entry.path(), clientHash)) {
+				throw std::runtime_error("calculate clientHash failed");
+				;
+			}
+			if (serverone->second.hash != clientHash) {
+				LostEntries.push_back(pending);
+				continue;
 			}
 		}
 	}
 
 	// 发送缺失文件数给server
-	if (!sendAll(client_fd, &fileCount, sizeof(fileCount))) {
-		throw std::runtime_error("fileCount send failed");
+	std::uint32_t entryCount = (std::uint32_t) LostEntries.size();
+	if (!sendAll(client_fd, &entryCount, sizeof(entryCount))) {
+		throw std::runtime_error("send entryCount failed");
 	}
+	for (const auto &entry : LostEntries) {
+		std::uint8_t typeValue = (std::uint8_t) entry.entryType;
+		std::string relativePath = entry.relative_path.generic_string();
+		std::uint32_t pathSize = (std::uint32_t) relativePath.size();
 
-	for (const auto &entry : filelost) {
-
-		logger.info("Sending file: " + entry.name);
-
-		char buffer[BUF_SIZE];
-
-		auto filePath = entry.absolute_path;
-		auto filesize = entry.size;
-
-		// 发送文件大小
-		if (!sendAll(client_fd, &filesize, sizeof(filesize))) {
-			throw std::runtime_error("filesize send failed");
+		// 发送文件类型值
+		if (!sendAll(client_fd, &typeValue, sizeof(typeValue))) {
+			throw std::runtime_error("send typeValue failed");
 		}
-
-		// 发送文件相对路径大小
-
-		std::string relativePath = entry.relative_path.string();
-		std::uint32_t pathSize = (std::uint32_t) (relativePath.size());
+		// 发送相对路径大小
 		if (!sendAll(client_fd, &pathSize, sizeof(pathSize))) {
-			throw std::runtime_error("pathSize send failed");
+			throw std::runtime_error("send pathSize failed");
 		}
-		// 发送文件相对路径
-
+		// 发送路径
 		if (!sendAll(client_fd, relativePath.data(), pathSize)) {
-			throw std::runtime_error("relativePath send failed");
+			throw std::runtime_error("send relativePath failed");
 		}
-
-		// 发送文件内容
-		std::ifstream file(filePath, std::ios::binary);
+		// 如果是空目录 跳过发送大小
+		if (entry.entryType == EntryType::Directory) {
+			continue;
+		}
+		// 发送文件大小
+		if (!sendAll(client_fd, &entry.size, sizeof(entry.size))) {
+			throw std::runtime_error("send filesize failed");
+		}
+		// 发送文件
+		std::ifstream file(entry.absolute_path, std::ios::binary);
 		if (!file) {
-			throw std::runtime_error("file open failed");
+			throw std::runtime_error("open file failed");
 		}
-
+		char buffer[64 * 1024];
 		while (file.read(buffer, sizeof(buffer)) || file.gcount() > 0) {
-			std::streamsize count = file.gcount();
-			if (count > 0) {
-				if (!sendAll(client_fd, buffer, (int) (count))) {
-					throw std::runtime_error("file send failed");
+			auto byteRead = file.gcount();
+			if (byteRead > 0) {
+				if (!sendAll(client_fd, &buffer, byteRead)) {
+					throw std::runtime_error("send file content failed");
 				}
 			}
 		}
-
-		logger.info("File sent: " + std::to_string(filesize) + " B");
 	}
 	logger.info("File synchronization completed.");
 	shutdown(client_fd, SD_BOTH);
