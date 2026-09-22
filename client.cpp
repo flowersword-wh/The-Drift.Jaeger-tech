@@ -1,10 +1,9 @@
-#include <atomic>
 #include <filesystem>
 #include <map>
 #define WIN32_LEAN_AND_MEAN
 
 #include "include/logger.h"
-#include "include/fileoverview.h"
+#include "net/socket_transfer.h"
 #include <cstdint>
 #include <fstream>
 #include <vector>
@@ -18,43 +17,8 @@
 
 #define BUF_SIZE 256
 #pragma comment(lib, "ws2_32.lib")
+namespace fs = std::filesystem;
 
-int judge(int result, const std::string &message)
-{
-	if (result == SOCKET_ERROR) {
-		throw std::runtime_error(message + " failed");
-	}
-	return 0;
-}
-
-// sendAll(fd,发送的数据，发送数据大小)
-bool sendAll(SOCKET fd, const void *data, int len)
-{
-	int sent = 0;
-	const char *bytes = static_cast<const char *>(data);
-	while (sent < len) {
-		int result = send(fd, bytes + sent, len - sent, 0);
-		if (result <= 0) {
-			return false;
-		}
-		sent += result;
-	}
-	return true;
-}
-
-bool recvAll(SOCKET fd, void *data, int len)
-{
-	int received = 0;
-	char *bytes = (char *) (data);
-	while (received < len) {
-		int result = recv(fd, bytes + received, len - received, 0);
-		if (result <= 0) {
-			return false;
-		}
-		received += result;
-	}
-	return true;
-}
 int main(int argc, char *argv[])
 {
 
@@ -140,28 +104,27 @@ int main(int argc, char *argv[])
 	std::vector<PendingEntry> LostEntries;
 	// 接收服务端发来的 entry 数量
 	std::uint32_t serverEntryCount = 0;
-	if (!recvAll(client_fd, &serverEntryCount, sizeof(serverEntryCount))) {
-		throw std::runtime_error("receive serverEntryCount failed");
-	}
+	Receiver(client_fd, &serverEntryCount, sizeof(serverEntryCount),
+							"receive serverEntryCount failed");
 	// 接收服务端发来的项
 	for (int i = 0; i < serverEntryCount; i++) {
 		EntryData data{};
 		std::uint32_t pathSize = 0;
+
 		// 接收相对路径大小
-		if (!recvAll(client_fd, &pathSize, sizeof(pathSize))) {
-			throw std::runtime_error("receive filepath size failed");
-		}
+		Receiver(client_fd, &pathSize, sizeof(pathSize),
+								"receive filepath size failed");
+
 		// 接收相对路径
 		std::string relativePath(pathSize, '\0');
+		Receiver(client_fd, relativePath.data(), (int) (pathSize),
+								"receive filepath failed");
 
-		if (!recvAll(client_fd, relativePath.data(), (int) (pathSize))) {
-			throw std::runtime_error("receive filepath failed");
-		}
 		// 接收文件类型值
 		std::uint8_t typeValue;
-		if (!recvAll(client_fd, &typeValue, sizeof(typeValue))) {
-			throw std::runtime_error("receive file typevalue failed");
-		}
+		Receiver(client_fd, &typeValue, sizeof(typeValue),
+								"receive file typevalue failed");
+
 		EntryType entryType;
 		if (typeValue == (std::uint8_t) (EntryType::File)) {
 			entryType = EntryType::File;
@@ -170,24 +133,22 @@ int main(int argc, char *argv[])
 		} else {
 			throw std::runtime_error("invalid entry type");
 		}
+
 		// 初始化到data结构体里 方便保存
 		data.entryType = entryType;
 		data.relativePath = fs::path(relativePath);
 
 		if (entryType == EntryType::File) {
 			// 如果是文件 接收文件大小和文件哈希值
-			if (!recvAll(client_fd, &data.fileSize, sizeof(data.fileSize))) {
-				throw std::runtime_error("receive filesize failed");
-			}
+			Receiver(client_fd, &data.fileSize, sizeof(data.fileSize),
+									"receive filesize failed");
 			// 接收哈希值
 			Sha256 serverHash{};
-			if (!recvAll(client_fd, serverHash.data(),
-									 static_cast<int>(serverHash.size()))) {
-				throw std::runtime_error("receive file hash failed");
-			}
+			Receiver(client_fd, serverHash.data(), (int) (serverHash.size()),
+									"receive file hash failed");
 			data.hash = serverHash;
 		}
-		//插入serverEntries
+		// 插入serverEntries
 		serverEntries.emplace(data.relativePath.string(), data);
 	}
 	// 遍历查找 缺失就标记 记录缺失数
@@ -210,6 +171,7 @@ int main(int argc, char *argv[])
 		// 对比服务端信息清单
 		std::string path = pending.relative_path.generic_string();
 		auto serverone = serverEntries.find(path);
+
 		// 找不到 加入
 		if (serverone == serverEntries.end()) {
 			LostEntries.push_back(pending);
@@ -243,35 +205,28 @@ int main(int argc, char *argv[])
 
 	// 发送缺失文件数给server
 	std::uint32_t entryCount = (std::uint32_t) LostEntries.size();
-	if (!sendAll(client_fd, &entryCount, sizeof(entryCount))) {
-		throw std::runtime_error("send entryCount failed");
-	}
+	Sender(client_fd, &entryCount, sizeof(entryCount),
+							"send entryCount failed");
 	for (const auto &entry : LostEntries) {
 		std::uint8_t typeValue = (std::uint8_t) entry.entryType;
 		std::string relativePath = entry.relative_path.generic_string();
 		std::uint32_t pathSize = (std::uint32_t) relativePath.size();
 
-		// 发送文件类型值
-		if (!sendAll(client_fd, &typeValue, sizeof(typeValue))) {
-			throw std::runtime_error("send typeValue failed");
-		}
-		// 发送相对路径大小
-		if (!sendAll(client_fd, &pathSize, sizeof(pathSize))) {
-			throw std::runtime_error("send pathSize failed");
-		}
-		// 发送路径
-		if (!sendAll(client_fd, relativePath.data(), pathSize)) {
-			throw std::runtime_error("send relativePath failed");
-		}
+		// 发送文件类型值 ——> 相对路径大小 ——> 路径
+		Sender(client_fd, &typeValue, sizeof(typeValue),
+								"send typeValue failed");
+		Sender(client_fd, &pathSize, sizeof(pathSize), "send pathSize failed");
+		Sender(client_fd, relativePath.data(), pathSize,
+								"send relativePath failed");
+
 		// 如果是空目录 跳过发送大小
 		if (entry.entryType == EntryType::Directory) {
 			continue;
 		}
-		// 发送文件大小
-		if (!sendAll(client_fd, &entry.size, sizeof(entry.size))) {
-			throw std::runtime_error("send filesize failed");
-		}
-		// 发送文件
+		// 发送文件大小和文件内容
+		Sender(client_fd, &entry.size, sizeof(entry.size),
+								"send filesize failed");
+
 		std::ifstream file(entry.absolute_path, std::ios::binary);
 		if (!file) {
 			throw std::runtime_error("open file failed");
@@ -280,9 +235,8 @@ int main(int argc, char *argv[])
 		while (file.read(buffer, sizeof(buffer)) || file.gcount() > 0) {
 			auto byteRead = file.gcount();
 			if (byteRead > 0) {
-				if (!sendAll(client_fd, &buffer, byteRead)) {
-					throw std::runtime_error("send file content failed");
-				}
+				Sender(client_fd, buffer, static_cast<int>(byteRead),
+										"send file content failed");
 			}
 		}
 	}

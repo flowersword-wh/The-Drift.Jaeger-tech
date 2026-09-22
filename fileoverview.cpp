@@ -1,15 +1,5 @@
 
 #include "include/fileoverview.h"
-#include <array>
-#include <cstdint>
-#include <fileapi.h>
-#include <filesystem>
-#include <fstream>
-#include <iostream>
-#include <string>
-
-
-
 
 bool is_CorrectPath(std::string &path)
 {
