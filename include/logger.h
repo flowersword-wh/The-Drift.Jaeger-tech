@@ -1,7 +1,6 @@
 #pragma once
 
 #include <chrono>
-#include <cstdint>
 #include <iomanip>
 #include <iostream>
 #include <string_view>
