@@ -33,24 +33,48 @@ end
 
 target("server")
   set_kind("binary")
-  add_files("server.cpp", "fileoverview.cpp", "filehash.cpp",
-          "net/socket_transfer.cpp")
+
+  add_files(
+    "src/apps/server_main.cpp",
+    "src/sync/server_sync.cpp",
+    "src/filesystem/directory_scan.cpp",
+    "src/filesystem/file_hash.cpp",
+    "src/filesystem/path_validation.cpp",
+    "src/transport/socket.cpp",
+    "src/transport/winsock_runtime.cpp",
+    "src/protocol/overview.cpp",
+    "src/protocol/transfer.cpp"
+  )
+
   add_packages("openssl")
+  add_syslinks("ws2_32")
 
   after_build(function(target)
-      copy_exe(target, "server_test", path, os)
+    copy_exe(target, "server_test", path, os)
   end)
 
 target("client")
   set_kind("binary")
-  add_files("client.cpp", "filehash.cpp",
-          "net/socket_transfer.cpp")
+
+  add_files(
+    "src/apps/client_main.cpp",
+    "src/sync/client_sync.cpp",
+    "src/filesystem/directory_scan.cpp",
+    "src/filesystem/file_hash.cpp",
+    "src/filesystem/path_validation.cpp",
+    "src/transport/socket.cpp",
+    "src/transport/winsock_runtime.cpp",
+    "src/protocol/overview.cpp",
+    "src/protocol/transfer.cpp"
+  )
+
   add_packages("openssl")
+  add_syslinks("ws2_32")
 
   after_build(function(target)
-      copy_exe(target, "client_test", path, os)
+    copy_exe(target, "client_test", path, os)
   end)
-
+  
 target("test_runner")
   set_kind("phony")
   add_deps("server", "client")
